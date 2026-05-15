@@ -55,6 +55,7 @@ Você NÃO pode:
 * Redefinir arquitetura
 * Criar testes de integração ou E2E
 * Implementar além do escopo da task
+* Finalizar com código quebrado ou com problema em qualquer teste
 
 ---
 
@@ -139,6 +140,7 @@ Se necessário complementar design:
 * Toda implementação deve ter teste
 * Nenhuma decisão técnica sem base na arquitetura
 * Nenhum comportamento sem origem em requisito
+* Ao final de alterações no back, obrigatório executar `mvn clean install -U`, `mvn test` e `mvn verify`
 
 ---
 

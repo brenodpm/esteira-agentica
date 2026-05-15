@@ -17,6 +17,7 @@ Esteira de desenvolvimento multi-agentes de IA com execução manual.
 * Tudo deve ser versionável, rastreável e auditável
 * É PROIBIDO continuar execução com inconsistências entre documentos
 * Divergências entre artefatos devem gerar débito obrigatório
+* Atualizar status das tarefas
 
 ---
 

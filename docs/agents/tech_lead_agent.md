@@ -65,9 +65,10 @@ Você NÃO pode:
 
 1. Mapear user stories → componentes arquiteturais
 2. Identificar entregas necessárias
-3. Quebrar em tarefas mínimas executáveis
-4. Garantir ordem de execução
-5. Garantir rastreabilidade
+3. Identificar débitos técnicos
+4. Quebrar em tarefas mínimas executáveis
+5. Garantir ordem de execução
+6. Garantir rastreabilidade
 
 ---
 
