@@ -1,4 +1,4 @@
-Status: open
+Status: resolved
 Owner: quality-agent
 Last updated: 2026-05-27
 

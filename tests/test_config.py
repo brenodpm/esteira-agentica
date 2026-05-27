@@ -61,5 +61,10 @@ def test_load_raises_value_error_when_repo_missing(tmp_path):
         load(_write_json(tmp_path, {}))
 
 
+def test_load_raises_value_error_when_repo_empty(tmp_path):
+    with pytest.raises(ValueError, match="repo"):
+        load(_write_json(tmp_path, {"repo": ""}))
+
+
 def test_load_is_importable():
     assert callable(load)
