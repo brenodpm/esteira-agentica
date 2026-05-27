@@ -1,4 +1,4 @@
-Status: approved
+Status: done
 Owner: engineering-agent
 Last updated: 2026-05-27
 
