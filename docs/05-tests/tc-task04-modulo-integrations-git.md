@@ -1,4 +1,4 @@
-Status: draft
+Status: done
 Owner: quality-agent
 Last updated: 2026-05-27
 
