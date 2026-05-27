@@ -22,7 +22,7 @@ _AGENT_RESULT = {"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_o
 # CT-049 — state.load retorna estado inicial quando arquivo não existe
 def test_state_load_missing_file(tmp_path):
     result = state_mod.load(tmp_path / "nao_existe.json")
-    assert result == {"current_feature": None, "current_step": None, "status": "idle", "issue_number": None}
+    assert result == {"current_feature": None, "current_step": None, "status": "idle", "issue_number": None, "rework": False}
 
 
 # CT-050 — state.load retorna conteúdo do arquivo quando existe
@@ -63,6 +63,7 @@ def test_run_once_advances_step():
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
+         patch("src.orchestrator.runner.github.post_comment"), \
          patch("src.orchestrator.runner.github.move_card"), \
          patch("src.orchestrator.runner.state_mod.save") as mock_save:
         run_once(_CONFIG)
@@ -77,6 +78,7 @@ def test_run_once_creates_branch_on_new_feature():
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
+         patch("src.orchestrator.runner.github.post_comment"), \
          patch("src.orchestrator.runner.github.move_card"), \
          patch("src.orchestrator.runner.state_mod.save"):
         run_once(_CONFIG)
@@ -91,6 +93,7 @@ def test_run_once_no_branch_on_resume():
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
+         patch("src.orchestrator.runner.github.post_comment"), \
          patch("src.orchestrator.runner.github.move_card"), \
          patch("src.orchestrator.runner.state_mod.save"):
         run_once(_CONFIG)
@@ -112,6 +115,7 @@ def test_run_once_records_metrics():
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=agent_result), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \
+         patch("src.orchestrator.runner.github.post_comment"), \
          patch("src.orchestrator.runner.github.move_card"), \
          patch("src.orchestrator.runner.state_mod.save"):
         run_once(_CONFIG)

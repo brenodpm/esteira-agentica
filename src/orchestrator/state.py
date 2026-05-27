@@ -7,6 +7,7 @@ _INITIAL_STATE = {
     "current_step": None,
     "status": "idle",
     "issue_number": None,
+    "rework": False,
 }
 
 
