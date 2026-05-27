@@ -1,6 +1,7 @@
 import time
 
 from src.orchestrator import state as state_mod
+from src.orchestrator import blocker
 from src.integrations import github, git
 from src.agents import run as agents_run
 from src.metrics import record as metrics_record
@@ -20,6 +21,8 @@ def run_once(config: dict) -> None:
             sequence = config["agents_sequence"]
             step_index = sequence.index(current_state["current_step"]) + 1
             if step_index >= len(sequence):
+                # Feature complete — unblock dependents
+                blocker.unblock_dependents(config, current_state["issue_number"])
                 current_state.update(status="idle", current_step=None, current_feature=None, issue_number=None, rework=False)
             else:
                 current_state["current_step"] = sequence[step_index]
@@ -37,6 +40,15 @@ def run_once(config: dict) -> None:
     # --- Normal execution ---
     if status == "idle":
         if current_state.get("current_feature") is None:
+            # Deadlock check before fetching next issue
+            if blocker.detect_deadlock(config):
+                github.create_issue(
+                    config,
+                    title="[DEADLOCK] Ciclo de bloqueio detectado",
+                    body="Todas as issues disponíveis estão bloqueadas. Intervenção humana necessária.",
+                    labels=["needs-human"],
+                )
+                return
             issue = github.get_next_issue(config)
             if issue is None:
                 return
@@ -50,7 +62,7 @@ def run_once(config: dict) -> None:
         git.create_branch(config, current_state["current_feature"])
         role = sequence[0]
     else:
-        role = current_step  # rework: re-run same step; or already set by approval advance
+        role = current_step
 
     result = agents_run(role=role, context_files=[], prompt=current_state["current_feature"] or "")
 

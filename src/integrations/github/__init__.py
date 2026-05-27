@@ -8,6 +8,7 @@ from .client import (
     open_pr,
     create_issue,
     get_approval_status,
+    get_issues_with_label,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "open_pr",
     "create_issue",
     "get_approval_status",
+    "get_issues_with_label",
 ]

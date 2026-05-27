@@ -48,6 +48,7 @@ def test_state_save_atomic(tmp_path):
 # CT-052 — run_once retorna sem erro e sem alterar estado quando backlog vazio
 def test_run_once_empty_backlog():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
          patch("src.orchestrator.runner.github.get_next_issue", return_value=None), \
          patch("src.orchestrator.runner.state_mod.save") as mock_save, \
          patch("src.orchestrator.runner.agents_run") as mock_agents:

@@ -80,3 +80,10 @@ def get_approval_status(config: dict, issue_number: int) -> str:
     if "rejected" in label_names:
         return "rejected"
     return "pending"
+
+
+def get_issues_with_label(config: dict, label: str) -> list[dict]:
+    repo = config["repo"]
+    out = _gh("issue", "list", "--repo", repo, "--state", "open",
+              "--label", label, "--json", "number,title,body", "--limit", "100")
+    return json.loads(out)

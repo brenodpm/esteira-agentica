@@ -1,6 +1,6 @@
 Status: approved
 Owner: engineering-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-27T15:02-03:00
 
 ## Inputs
 - docs/02-architecture/adr-004-mecanismo-bloqueio-tasks.md
