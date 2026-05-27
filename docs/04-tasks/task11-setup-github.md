@@ -1,6 +1,6 @@
 Status: approved
 Owner: engineering-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-27T16:09:00-03:00
 
 ## Inputs
 - docs/01-requirements/github-setup.md

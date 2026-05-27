@@ -87,7 +87,8 @@ def test_rework_metrics_record():
 # CT-062 — output postado como comentário na issue após execução do agente
 def test_post_comment_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -101,7 +102,8 @@ def test_post_comment_after_agent():
 # CT-063 — estado salvo com status="awaiting_approval" após execução do agente
 def test_state_awaiting_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \

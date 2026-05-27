@@ -89,11 +89,11 @@ def test_detect_deadlock_false():
 def test_run_once_skips_blocked():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=None) as mock_next, \
+         patch("src.orchestrator.runner.priority.select_next", return_value=None) as mock_next, \
          patch("src.orchestrator.runner.state_mod.save") as mock_save, \
          patch("src.orchestrator.runner.agents_run") as mock_agents:
         run_once(_CONFIG)
-    mock_next.assert_called_once_with(_CONFIG)
+    mock_next.assert_called_once()
     mock_agents.assert_not_called()
 
 

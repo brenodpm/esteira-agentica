@@ -49,7 +49,7 @@ def test_state_save_atomic(tmp_path):
 def test_run_once_empty_backlog():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=None), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=None), \
          patch("src.orchestrator.runner.state_mod.save") as mock_save, \
          patch("src.orchestrator.runner.agents_run") as mock_agents:
         run_once(_CONFIG)
@@ -60,7 +60,8 @@ def test_run_once_empty_backlog():
 # CT-053 — run_once avança current_step após execução bem-sucedida do agente
 def test_run_once_advances_step():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -75,7 +76,8 @@ def test_run_once_advances_step():
 # CT-054 — run_once cria branch apenas no início de uma nova feature
 def test_run_once_creates_branch_on_new_feature():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -112,7 +114,8 @@ def test_run_loop_keyboard_interrupt():
 def test_run_once_records_metrics():
     agent_result = {"output": "ok", "duration_s": 2.5, "tokens_in": 10, "tokens_out": 20}
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=agent_result), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \

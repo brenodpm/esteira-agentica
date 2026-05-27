@@ -87,3 +87,17 @@ def get_issues_with_label(config: dict, label: str) -> list[dict]:
     out = _gh("issue", "list", "--repo", repo, "--state", "open",
               "--label", label, "--json", "number,title,body", "--limit", "100")
     return json.loads(out)
+
+
+def get_milestones(config: dict) -> list[str]:
+    repo = config["repo"]
+    out = _gh("api", f"repos/{repo}/milestones", "--jq", "[.[].title]")
+    return json.loads(out)
+
+
+def get_issues(config: dict, milestone: str) -> list[dict]:
+    repo = config["repo"]
+    out = _gh("issue", "list", "--repo", repo, "--state", "open",
+              "--milestone", milestone,
+              "--json", "number,title,labels,createdAt,body", "--limit", "100")
+    return json.loads(out)

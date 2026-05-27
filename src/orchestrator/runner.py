@@ -1,7 +1,7 @@
 import time
 
 from src.orchestrator import state as state_mod
-from src.orchestrator import blocker
+from src.orchestrator import blocker, priority
 from src.integrations import github, git
 from src.agents import run as agents_run
 from src.metrics import record as metrics_record
@@ -49,7 +49,7 @@ def run_once(config: dict) -> None:
                     labels=["needs-human"],
                 )
                 return
-            issue = github.get_next_issue(config)
+            issue = priority.select_next(config, current_state)
             if issue is None:
                 return
             current_state["issue_number"] = issue["number"]

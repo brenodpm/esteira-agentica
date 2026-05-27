@@ -9,6 +9,8 @@ from .client import (
     create_issue,
     get_approval_status,
     get_issues_with_label,
+    get_milestones,
+    get_issues,
 )
 
 __all__ = [
@@ -22,4 +24,6 @@ __all__ = [
     "create_issue",
     "get_approval_status",
     "get_issues_with_label",
+    "get_milestones",
+    "get_issues",
 ]
