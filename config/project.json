@@ -1,0 +1,17 @@
+{
+  "repo": "",
+  "gitflow": {
+    "branch_base": "main",
+    "prefixes": {
+      "feature": "feature/",
+      "fix": "fix/",
+      "release": "release/",
+      "hotfix": "hotfix/"
+    }
+  },
+  "board": {
+    "columns": ["Backlog", "In Progress", "Done"],
+    "labels": []
+  },
+  "agents_sequence": []
+}
