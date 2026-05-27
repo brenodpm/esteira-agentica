@@ -1,6 +1,6 @@
 Status: approved
 Owner: engineering-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-27T14:28-03:00
 
 ## Inputs
 - docs/02-architecture/cmp-orchestrator.md
