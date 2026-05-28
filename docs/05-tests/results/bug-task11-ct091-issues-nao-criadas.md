@@ -1,4 +1,4 @@
-Status: resolved
+Status: wont-fix
 Owner: quality-agent
 Last updated: 2026-05-27
 

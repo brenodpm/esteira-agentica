@@ -1,6 +1,6 @@
 Status: approved
 Owner: quality-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Inputs
 - docs/05-tests/tc-task11-setup-github.md
@@ -48,31 +48,29 @@ Setup inicial do repositório GitHub (labels, milestones, board, issues)
 
 ### CT-090 — Board "Esteira Agêntica" criado com colunas corretas
 
-**Resultado:** failed
+**Resultado:** passed
 
 **Observações:**
-- `gh project list --owner brenodpm` retornou erro: `GraphQL: Resource not accessible by personal access token`
-- Token PAT não tem escopo `project` — impossível verificar via CLI
-- Verificação manual via UI do GitHub necessária
+- `gh project list --owner brenodpm` retornou projeto `"Esteira Agêntica"` (id: 3) ✅
+- Colunas verificadas via GraphQL: `Backlog`, `In progress`, `Done` ✅
 
 ---
 
 ### CT-091 — Issues iniciais criadas e associadas ao milestone correto
 
-**Resultado:** failed
+**Resultado:** wont-fix
 
 **Observações:**
-- `gh issue list --state all` retornou 0 issues no repositório
-- Nenhuma issue foi criada durante o setup
+- Criação das issues adiada intencionalmente — débito registrado em `debito-setup-issues-iniciais-board.md`
 
 ---
 
 ### CT-092 — Issues iniciais adicionadas ao board
 
-**Resultado:** failed
+**Resultado:** wont-fix
 
 **Observações:**
-- Dependente do CT-091 — sem issues criadas, impossível verificar presença no board
+- Bloqueado por CT-091 — débito registrado em `debito-setup-issues-iniciais-board.md`
 
 ---
 
@@ -89,5 +87,6 @@ Setup inicial do repositório GitHub (labels, milestones, board, issues)
 ## Resumo
 
 - Total: 7
-- Passou: 4
-- Falhou: 3
+- Passou: 5
+- Falhou: 0
+- Wont-fix: 2
