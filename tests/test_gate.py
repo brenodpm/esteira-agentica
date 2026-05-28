@@ -30,7 +30,7 @@ _IDLE_NEW = {
 }
 
 _AGENT_RESULT = {"output": "artefato gerado", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}
-_ISSUE = {"number": 1, "title": "feat"}
+_ISSUE = {"number": 1, "title": "feat", "body": ""}
 
 
 # CT-058 — pending: nenhuma ação, estado inalterado
@@ -75,6 +75,7 @@ def test_rework_metrics_record():
     rework_state = {**_IDLE_NEW, "current_step": "requirements", "current_feature": "feat", "rework": True}
     with patch("src.orchestrator.runner.state_mod.load", return_value=rework_state), \
          patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \
          patch("src.orchestrator.runner.github.post_comment"), \
@@ -89,6 +90,7 @@ def test_post_comment_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
          patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -104,6 +106,7 @@ def test_state_awaiting_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
          patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \

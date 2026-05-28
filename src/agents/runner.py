@@ -5,9 +5,9 @@ AGENT_ROLES: list[str] = [
     "product",
     "requirements",
     "architecture",
+    "tech-lead",
     "engineering",
     "quality",
-    "operations",
 ]
 
 
@@ -17,7 +17,7 @@ def run(
     prompt: str,
     timeout_s: int = 300,
 ) -> dict:
-    cmd = ["kiro", "chat", "--agent", role]
+    cmd = ["kiro", "chat", "--agent", role, "--no-interactive"]
     for path in context_files:
         cmd += ["--context", path]
 
@@ -48,6 +48,22 @@ def run(
         "tokens_out": tokens_out,
         "duration_s": duration_s,
     }
+
+
+def build_prompt(role: str, issue: dict, rework: bool = False) -> str:
+    """Build a structured prompt from a GitHub issue for a specific agent role."""
+    number = issue.get("number", "?")
+    title = issue.get("title", "")
+    body = issue.get("body") or ""
+
+    rework_note = "\n\n> ⚠️ REWORK: esta etapa foi rejeitada. Revise o artefato anterior antes de produzir a nova versão." if rework else ""
+
+    return (
+        f"Etapa: {role}\n"
+        f"Issue: #{number} — {title}\n"
+        f"{rework_note}\n\n"
+        f"{body}".strip()
+    )
 
 
 def _extract_tokens(stdout: str, stderr: str, key: str) -> int | None:

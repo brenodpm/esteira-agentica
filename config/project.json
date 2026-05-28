@@ -13,5 +13,5 @@
     "columns": ["Backlog", "In Progress", "Done"],
     "labels": []
   },
-  "agents_sequence": []
+  "agents_sequence": ["product", "requirements", "architecture", "tech-lead", "engineering", "quality"]
 }

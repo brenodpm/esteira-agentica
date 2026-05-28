@@ -15,7 +15,7 @@ _CONFIG = {
 }
 
 _IDLE_STATE = {"current_feature": None, "current_step": None, "status": "idle", "issue_number": None}
-_ISSUE = {"number": 1, "title": "feat: nova feature"}
+_ISSUE_FULL = {"number": 1, "title": "feat: nova feature", "body": "Descrição da feature"}
 _AGENT_RESULT = {"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}
 
 
@@ -61,7 +61,8 @@ def test_run_once_empty_backlog():
 def test_run_once_advances_step():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
-         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE_FULL), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -77,7 +78,8 @@ def test_run_once_advances_step():
 def test_run_once_creates_branch_on_new_feature():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
-         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE_FULL), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -92,7 +94,8 @@ def test_run_once_creates_branch_on_new_feature():
 def test_run_once_no_branch_on_resume():
     resume_state = {"current_feature": "feat", "current_step": "requirements", "status": "running", "issue_number": 1}
     with patch("src.orchestrator.runner.state_mod.load", return_value=resume_state), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE_FULL), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record"), \
@@ -115,7 +118,8 @@ def test_run_once_records_metrics():
     agent_result = {"output": "ok", "duration_s": 2.5, "tokens_in": 10, "tokens_out": 20}
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_STATE)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
-         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
+         patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE_FULL), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.git.create_branch"), \
          patch("src.orchestrator.runner.agents_run", return_value=agent_result), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \

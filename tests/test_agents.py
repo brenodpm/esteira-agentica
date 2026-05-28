@@ -53,7 +53,7 @@ def test_run_raises_runtime_error_on_nonzero():
 
 # CT-047 — AGENT_ROLES contém todos os papéis válidos
 def test_agent_roles():
-    assert AGENT_ROLES == ["product", "requirements", "architecture", "engineering", "quality", "operations"]
+    assert AGENT_ROLES == ["product", "requirements", "architecture", "tech-lead", "engineering", "quality"]
 
 
 # CT-048 — run e AGENT_ROLES acessíveis via src.agents

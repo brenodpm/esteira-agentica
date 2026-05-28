@@ -3,7 +3,7 @@ import time
 from src.orchestrator import state as state_mod
 from src.orchestrator import blocker, priority
 from src.integrations import github, git
-from src.agents import run as agents_run
+from src.agents import run as agents_run, build_prompt as agents_build_prompt
 from src.metrics import record as metrics_record
 
 
@@ -64,7 +64,9 @@ def run_once(config: dict) -> None:
     else:
         role = current_step
 
-    result = agents_run(role=role, context_files=[], prompt=current_state["current_feature"] or "")
+    issue = github.get_issue(config, current_state["issue_number"])
+    prompt = agents_build_prompt(role=role, issue=issue, rework=current_state.get("rework", False))
+    result = agents_run(role=role, context_files=[], prompt=prompt)
 
     metrics_record(
         path=config.get("metrics_db", "metrics.db"),

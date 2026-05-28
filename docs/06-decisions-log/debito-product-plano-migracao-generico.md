@@ -1,6 +1,6 @@
-Status: open
+Status: resolved
 Owner: product-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Inputs
 - docs/00-product/vision.md
@@ -30,3 +30,9 @@ product-agent (estrutura do plano) + requirements-agent (detalhamento dos casos 
 ## Bloqueia etapa?
 
 Não — relevante após a v1 estar estável e documentada.
+
+## Resolução
+- Criado `docs/00-product/migration-plan.md` com diagnóstico, pré-requisitos, passos incrementais e checklist
+- Criada estrutura `.kiro/agents/` com agentes Kiro otimizados para cada papel da esteira
+- Épico de Adoção e Migração adicionado ao `docs/00-product/epicos.md`
+- Data: 2026-05-28

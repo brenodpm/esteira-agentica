@@ -1,6 +1,6 @@
-Status: open
+Status: resolved
 Owner: product-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Inputs
 - docs/00-product/vision.md
@@ -29,3 +29,9 @@ product-agent (definir estrutura do README) + engineering-agent (executar a cada
 ## Bloqueia etapa?
 
 Não — começa a ser relevante na entrega da v1.
+
+## Resolução
+- Estrutura do README definida no `docs/00-product/migration-plan.md` (seção de adoção pública)
+- Atualização incremental do README delegada ao engineering-agent a cada milestone
+- Épico de Adoção e Migração formaliza essa responsabilidade em `docs/00-product/epicos.md`
+- Data: 2026-05-28
