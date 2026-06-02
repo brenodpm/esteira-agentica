@@ -275,15 +275,21 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
         branch = git.current_branch()
         flow = _flow_config(config, current_col)
         try:
-            git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
-            git.push(branch)
-            pr = github.open_pr(
-                config,
-                title=f"[#{current_state['issue_number']}] {current_state.get('current_feature', '')}",
-                body=f"Gerado automaticamente após execução do agente `{role}`.\n\nFecha #{current_state['issue_number']}",
-                head=branch,
-                base=flow.get("merge", "main"),
-            )
+            committed = git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
+            if not committed:
+                logs.log_error(current_state["issue_number"], role, "agente não gravou arquivos — nenhum commit gerado, PR ignorado")
+            else:
+                git.push(branch)
+                logs.log_info(current_state["issue_number"], role, f"push concluído para branch '{branch}'")
+                pr = github.open_pr(
+                    config,
+                    title=f"[#{current_state['issue_number']}] {current_state.get('current_feature', '')}",
+                    body=f"Gerado automaticamente após execução do agente `{role}`.\n\nFecha #{current_state['issue_number']}",
+                    head=branch,
+                    base=flow.get("merge", "main"),
+                )
+                pr_url = pr.get("url", "")
+                logs.log_info(current_state["issue_number"], role, f"PR aberto: {pr_url}")
             pr_url = pr.get("url", "")
         except RuntimeError as e:
             logs.log_error(current_state["issue_number"], role, f"git commit/push/PR falhou: {e}")

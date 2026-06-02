@@ -115,6 +115,13 @@ def log_error(issue_number: int | None, agent: str | None, detail: str) -> None:
              "issue_number": issue_number, "agent": agent, "detail": detail})
 
 
+def log_info(issue_number: int | None, agent: str | None, detail: str) -> None:
+    ctx = f"#{issue_number} " if issue_number else ""
+    _print(f"  ℹ {ctx}{detail}")
+    _append({"ts": _now(), "event": "info",
+             "issue_number": issue_number, "agent": agent, "detail": detail})
+
+
 def read_all() -> list[dict]:
     """Lê todos os registros do arquivo de log do dia atual."""
     path = _log_path()

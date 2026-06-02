@@ -49,15 +49,17 @@ def create_branch(config: dict, branch_type_or_title: str, name: str | None = No
     return branch
 
 
-def commit(config: dict, message: str, files: list[str] | None = None) -> None:
+def commit(config: dict, message: str, files: list[str] | None = None) -> bool:
+    """Commita mudanças. Retorna True se houve commit, False se não havia nada."""
     if files is None:
         _git("add", "-A")
     else:
         _git("add", *files)
     # nada para commitar — não é erro
     if not _git("status", "--porcelain").strip():
-        return
+        return False
     _git("commit", "-m", message)
+    return True
 
 
 def push(branch: str) -> None:
