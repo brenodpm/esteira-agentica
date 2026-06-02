@@ -1,6 +1,7 @@
 from .client import (
     get_next_issue,
     get_issue,
+    issue_exists,
     post_comment,
     add_label,
     remove_label,
@@ -17,6 +18,7 @@ from .sync import sync_boards
 __all__ = [
     "get_next_issue",
     "get_issue",
+    "issue_exists",
     "post_comment",
     "add_label",
     "remove_label",

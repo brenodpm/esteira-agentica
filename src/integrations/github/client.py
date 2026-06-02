@@ -123,6 +123,14 @@ def create_issue(config: dict, title: str, body: str, labels: list[str]) -> dict
     return json.loads(out)
 
 
+def issue_exists(config: dict, issue_number: int) -> bool:
+    try:
+        get_issue(config, issue_number)
+        return True
+    except RuntimeError:
+        return False
+
+
 def get_approval_status(config: dict, issue_number: int) -> str:
     issue = get_issue(config, issue_number)
     label_names = {l["name"] for l in issue.get("labels", [])}

@@ -61,6 +61,7 @@ _ISSUE = {"number": 1, "title": "feat", "body": "", "labels": [{"name": "dev"}]}
 # CT-058 — pending: nenhuma ação, estado inalterado
 def test_pending_no_action():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_approval_status", return_value="pending"), \
          patch("src.orchestrator.runner.state_mod.save") as mock_save, \
          patch("src.orchestrator.runner.agents_run") as mock_agents:
@@ -72,6 +73,7 @@ def test_pending_no_action():
 # CT-059 — approved: avança para próxima coluna com agente, status volta a "idle"
 def test_approved_advances_step():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_approval_status", return_value="approved"), \
          patch("src.orchestrator.runner.github.remove_label") as mock_remove, \
          patch("src.orchestrator.runner.state_mod.save") as mock_save:
@@ -86,6 +88,7 @@ def test_approved_advances_step():
 # CT-060 — rejected: current_step mantido, rework=True
 def test_rejected_sets_rework():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_approval_status", return_value="rejected"), \
          patch("src.orchestrator.runner.github.remove_label") as mock_remove, \
          patch("src.orchestrator.runner.state_mod.save") as mock_save:
@@ -101,6 +104,7 @@ def test_rework_metrics_record():
     rework_state = {**_IDLE_NEW, "current_column": "dev", "current_step": "requirements",
                     "current_feature": "feat", "rework": True}
     with patch("src.orchestrator.runner.state_mod.load", return_value=rework_state), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \
@@ -114,6 +118,7 @@ def test_rework_metrics_record():
 # CT-062 — comentário pontual postado na issue após execução do agente (sem output completo)
 def test_post_comment_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
          patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
@@ -133,6 +138,7 @@ def test_post_comment_after_agent():
 # CT-063 — estado salvo com status="awaiting_approval" após execução do agente
 def test_state_awaiting_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
          patch("src.orchestrator.runner.priority.select_next", return_value=_ISSUE), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \

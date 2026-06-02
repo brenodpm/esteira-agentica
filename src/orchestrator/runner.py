@@ -75,6 +75,13 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
 
     # --- Gate: awaiting human approval ---
     if status == "awaiting_approval":
+        # E5: issue fechada/deletada durante a espera → reseta state
+        if not github.issue_exists(config, current_state["issue_number"]):
+            logs.log_error(current_state["issue_number"], None, "issue não encontrada durante awaiting_approval — resetando state")
+            _reset_state(current_state)
+            state_mod.save(current_state)
+            return
+
         approval = github.get_approval_status(config, current_state["issue_number"])
         if approval == "pending":
             return
@@ -109,6 +116,13 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
 
     # --- Normal execution ---
     if status == "idle":
+        # E1: state corrompido com issue_number de issue inexistente
+        if current_state.get("issue_number") and not github.issue_exists(config, current_state["issue_number"]):
+            logs.log_error(current_state["issue_number"], None, "issue_number no state aponta para issue inexistente — resetando state")
+            _reset_state(current_state)
+            state_mod.save(current_state)
+            return
+
         if current_state.get("current_feature") is None:
             if blocker.detect_deadlock(config):
                 github.create_issue(
@@ -215,13 +229,17 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     state_mod.save(current_state)
 
 
+def _reset_state(state: dict) -> None:
+    state.update(status="idle", current_step=None, current_column=None,
+                 current_feature=None, issue_number=None, rework=False)
+
+
 def _finish_issue(config: dict, state: dict, sprint_issues: list[int], done_col_id: str) -> None:
     blocker.unblock_dependents(config, state["issue_number"])
     logs.log_issue_done(state["issue_number"])
     sprint_issues.append(state["issue_number"])
     github.move_card(config, state["issue_number"], _column_name(config, done_col_id))
-    state.update(status="idle", current_step=None, current_column=None,
-                 current_feature=None, issue_number=None, rework=False)
+    _reset_state(state)
 
 
 # ---------------------------------------------------------------------------

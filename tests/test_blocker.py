@@ -109,6 +109,7 @@ def test_run_once_unblocks_on_completion():
         "rework": False,
     }
     with patch("src.orchestrator.runner.state_mod.load", return_value=awaiting_state), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_approval_status", return_value="approved"), \
          patch("src.orchestrator.runner.github.remove_label"), \
          patch("src.orchestrator.runner.blocker.unblock_dependents") as mock_unblock, \
@@ -241,6 +242,7 @@ _WAIT_STATE = {
 # CT-096 — wait_children: avança quando não há filhas pendentes
 def test_wait_children_advances_when_no_children():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.blocker.all_children_done", return_value=True), \
          patch("src.orchestrator.runner.github.move_card") as mock_move, \
          patch("src.orchestrator.runner.blocker.unblock_dependents"), \
@@ -252,6 +254,7 @@ def test_wait_children_advances_when_no_children():
 # CT-097 — wait_children: não avança enquanto há filhas abertas
 def test_wait_children_waits_when_pending():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.blocker.all_children_done", return_value=False), \
          patch("src.orchestrator.runner.agents_run") as mock_agents, \
          patch("src.orchestrator.runner.state_mod.save") as mock_save:
