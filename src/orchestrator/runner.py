@@ -234,6 +234,20 @@ def _reset_state(state: dict) -> None:
                  current_feature=None, issue_number=None, rework=False)
 
 
+def _print_status(config: dict, sleep_s: float) -> None:
+    from datetime import datetime
+    state = state_mod.load()
+    status = state.get("status", "idle")
+    ts = datetime.now().strftime("%H:%M:%S")
+    if status == "awaiting_approval":
+        info = f"aguardando aprovação — #{state.get('issue_number')} / {state.get('current_step')}"
+    elif state.get("current_feature"):
+        info = f"processando #{state.get('issue_number')} — {state.get('current_feature')}"
+    else:
+        info = "aguardando issues"
+    print(f"[{ts}] {info} (próximo ciclo em {int(sleep_s)}s)", flush=True)
+
+
 def _finish_issue(config: dict, state: dict, sprint_issues: list[int], done_col_id: str) -> None:
     blocker.unblock_dependents(config, state["issue_number"])
     logs.log_issue_done(state["issue_number"])
@@ -261,7 +275,9 @@ def _run_optimizer(config: dict, sprint_issues: list[int]) -> None:
 
 def run_loop(config: dict, poll_interval_s: int = 60) -> None:
     init_db(config.get("metrics_db", "metrics.db"))
+    print("Sincronizando boards...", flush=True)
     sync_boards(config)
+    print("Boards sincronizados. Iniciando loop.", flush=True)
     sprint_issues: list[int] = []
     sprint_size = config.get("pipe", {}).get("sprint_size", 10)
 
@@ -274,7 +290,10 @@ def run_loop(config: dict, poll_interval_s: int = 60) -> None:
                 sprint_issues = []
 
             sleep_s = (config.get("pipe", {}).get("sleeptime") or 1) * 60
-            time.sleep(poll_interval_s if poll_interval_s != 60 else sleep_s)
+            wait = poll_interval_s if poll_interval_s != 60 else sleep_s
+            _print_status(config, wait)
+            time.sleep(wait)
     except KeyboardInterrupt:
+        print("\nInterrompido.", flush=True)
         if sprint_issues:
             _run_optimizer(config, sprint_issues)

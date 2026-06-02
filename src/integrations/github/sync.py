@@ -112,10 +112,9 @@ def sync_boards(config: dict) -> None:
         # Garante projeto
         if board_name in projects_by_name:
             project = projects_by_name[board_name]
-            print(f"  [ok] projeto '{board_name}' já existe (#{project['number']})")
         else:
             project = _create_project(owner_id, board_name)
-            print(f"  [+] projeto '{board_name}' criado (#{project['number']})")
+            print(f"  [+] projeto '{board_name}' criado (#{project['number']})", flush=True)
 
         project_id = project["id"]
 
@@ -123,19 +122,18 @@ def sync_boards(config: dict) -> None:
         status_field = _get_status_field(project_id)
         if status_field is None:
             status_field = _create_status_field(project_id)
-            print(f"      [+] campo 'Status' criado em '{board_name}'")
-        else:
-            print(f"      [ok] campo 'Status' já existe em '{board_name}'")
 
         field_id = status_field["id"]
         existing_options = {o["name"] for o in status_field.get("options", [])}
 
         # Garante opções (colunas)
+        added = []
         for col_id, col in columns.items():
             col_name = col.get("name", col_id)
             if col_name not in existing_options:
                 _add_status_option(field_id, list(existing_options), col_name)
                 existing_options.add(col_name)
-                print(f"      [+] coluna '{col_name}' adicionada")
-            else:
-                print(f"      [ok] coluna '{col_name}' já existe")
+                added.append(col_name)
+
+        if added:
+            print(f"  [+] '{board_name}': colunas adicionadas: {', '.join(added)}", flush=True)
