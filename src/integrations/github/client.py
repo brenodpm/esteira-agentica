@@ -61,24 +61,27 @@ def _get_projects(owner: str) -> list[dict]:
     return projects
 
 
-def _find_project_for_board(config: dict, column_name: str) -> dict | None:
-    """Retorna o projeto (number + id) que contém a coluna com o nome dado."""
+def _find_project_for_board(config: dict, column_name: str, board_name: str | None = None) -> dict | None:
+    """Retorna o projeto (number + id) que contém a coluna com o nome dado.
+    Se board_name for informado, restringe a busca a esse board."""
     owner = config["repo"].split("/")[0]
     projects = _get_projects(owner)
     projects_by_title = {p["title"]: p for p in projects}
 
     for board in config.get("boards", {}).values():
-        board_name = board.get("name", "")
+        bn = board.get("name", "")
+        if board_name and bn != board_name:
+            continue
         for col in board.get("columns", {}).values():
             if col.get("name") == column_name:
-                return projects_by_title.get(board_name)
+                return projects_by_title.get(bn)
     return None
 
 
-def move_card(config: dict, issue_number: int, column_name: str) -> None:
+def move_card(config: dict, issue_number: int, column_name: str, board_name: str | None = None) -> None:
     """Move issue para coluna do board pelo nome da coluna definido em esteira.yml."""
     owner = config["repo"].split("/")[0]
-    project = _find_project_for_board(config, column_name)
+    project = _find_project_for_board(config, column_name, board_name)
     if not project:
         return
 
