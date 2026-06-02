@@ -50,7 +50,12 @@ def test_create_branch_fix_prefix():
 
 # CT-029
 def test_commit_no_files_uses_add_all():
-    with patch("subprocess.run", return_value=_mock_run()) as mock:
+    def _side_effect(cmd, **kwargs):
+        # status --porcelain retorna algo para indicar que há mudanças
+        if "status" in cmd:
+            return _mock_run("M src/foo.py")
+        return _mock_run()
+    with patch("subprocess.run", side_effect=_side_effect) as mock:
         commit(CONFIG, "feat: inicial", files=None)
     calls_args = [c.args[0] for c in mock.call_args_list]
     assert any(args == ["git", "add", "-A"] for args in calls_args)

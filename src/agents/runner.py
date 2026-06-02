@@ -54,8 +54,11 @@ def build_prompt(role: str, issue: dict, rework: bool = False, acao: str | None 
         f"Etapa: {role}\n"
         f"Issue: #{number} — {title}\n"
         f"{acao_note}{rework_note}\n\n"
-        f"{body}".strip()
-    )
+        f"{body}\n\n"
+        f"---\n"
+        f"IMPORTANTE: Salve todos os artefatos produzidos em disco usando as ferramentas disponíveis (fs_write). "
+        f"Não responda apenas com texto — persista os arquivos conforme descrito no seu papel."
+    ).strip()
 
 
 def _extract_tokens(stdout: str, stderr: str, key: str) -> int | None:

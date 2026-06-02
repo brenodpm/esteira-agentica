@@ -11,7 +11,9 @@ def _git(*args) -> str:
 
 
 def _slugify(text: str) -> str:
-    slug = text.lower().strip()
+    import unicodedata
+    slug = unicodedata.normalize("NFKD", text.lower().strip())
+    slug = slug.encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^\w\s-]", "", slug)
     slug = re.sub(r"[\s_]+", "-", slug)
     return slug[:60]
@@ -52,6 +54,9 @@ def commit(config: dict, message: str, files: list[str] | None = None) -> None:
         _git("add", "-A")
     else:
         _git("add", *files)
+    # nada para commitar — não é erro
+    if not _git("status", "--porcelain").strip():
+        return
     _git("commit", "-m", message)
 
 
