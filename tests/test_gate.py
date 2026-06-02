@@ -154,6 +154,91 @@ def test_state_awaiting_after_agent():
     assert saved["current_step"] == "requirements"
 
 
+_CONFIG_GATE = {
+    "repo": "org/repo",
+    "metrics_db": ":memory:",
+    "boards": {
+        "demanda": {
+            "todo": "backlog",
+            "priority": 0,
+            "flow": "doc",
+            "columns": {
+                "backlog": {"name": "Backlog", "change": {"advance": "analise"}},
+                "analise": {
+                    "name": "Análise",
+                    "agent": "product",
+                    "git_commit": True,
+                    "acao": "Analisar",
+                    "change": {"advance": "aprovacao"},
+                },
+                "aprovacao": {
+                    "name": "Aprovação",
+                    "git_merge": True,
+                    "change": {"advance": "criacao"},
+                },
+                "criacao": {
+                    "name": "Criação",
+                    "agent": "product",
+                    "git_commit": True,
+                    "acao": "Criar",
+                    "change": {"advance": "concluido"},
+                },
+                "concluido": {"name": "Concluído"},
+            },
+        }
+    },
+}
+
+_AWAITING_ANALISE = {
+    "status": "awaiting_approval",
+    "current_column": "analise",
+    "current_step": "product",
+    "current_feature": "feat",
+    "issue_number": 1,
+    "rework": False,
+}
+
+_AWAITING_APROVACAO = {
+    "status": "awaiting_approval",
+    "current_column": "aprovacao",
+    "current_step": None,
+    "current_feature": "feat",
+    "issue_number": 1,
+    "rework": False,
+}
+
+
+# CT-065 — aprovação em coluna com agente → próxima é gate humano (sem agente): move card e awaiting_approval
+def test_approved_moves_to_human_gate():
+    with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING_ANALISE)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_approval_status", return_value="approved"), \
+         patch("src.orchestrator.runner.github.remove_label"), \
+         patch("src.orchestrator.runner.github.move_card") as mock_move, \
+         patch("src.orchestrator.runner.state_mod.save") as mock_save:
+        run_once(_CONFIG_GATE)
+    saved = mock_save.call_args[0][0]
+    assert saved["status"] == "awaiting_approval"
+    assert saved["current_column"] == "aprovacao"
+    assert saved["current_step"] is None
+    mock_move.assert_called_once_with(_CONFIG_GATE, 1, "Aprovação", None)
+
+
+# CT-066 — aprovação no gate humano → avança para coluna com agente, status=idle
+def test_approved_from_human_gate_advances():
+    with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING_APROVACAO)), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_approval_status", return_value="approved"), \
+         patch("src.orchestrator.runner.github.remove_label"), \
+         patch("src.orchestrator.runner.github.move_card"), \
+         patch("src.orchestrator.runner.state_mod.save") as mock_save:
+        run_once(_CONFIG_GATE)
+    saved = mock_save.call_args[0][0]
+    assert saved["status"] == "idle"
+    assert saved["current_column"] == "criacao"
+    assert saved["current_step"] == "product"
+
+
 # CT-064 — estado "awaiting_approval" persiste após reinicialização
 def test_awaiting_approval_persists(tmp_path):
     data = {"status": "awaiting_approval", "current_column": "dev", "current_step": "requirements",

@@ -170,11 +170,19 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             next_col_cfg = _find_column(config, next_col_id, current_board) if next_col_id else None
             next_has_agent = next_col_cfg.get("agent") if next_col_cfg else False
             next_is_wait = next_col_cfg.get("wait_children") if next_col_cfg else False
+            next_is_terminal = not next_col_cfg or (not next_has_agent and not next_is_wait and not _advance(config, next_col_id))
 
             if next_col_id and (next_has_agent or next_is_wait):
                 current_state["current_column"] = next_col_id
                 current_state["current_step"] = None
                 current_state["status"] = "idle"
+                current_state["rework"] = False
+            elif next_col_id and not next_is_terminal:
+                # coluna de gate humano: sem agente, mas tem avanço — move e aguarda aprovação
+                github.move_card(config, current_state["issue_number"], _column_name(config, next_col_id), _board_name_for_column(config, next_col_id))
+                current_state["current_column"] = next_col_id
+                current_state["current_step"] = None
+                current_state["status"] = "awaiting_approval"
                 current_state["rework"] = False
             else:
                 _finish_issue(config, current_state, sprint_issues, next_col_id or "concluido", current_board)
