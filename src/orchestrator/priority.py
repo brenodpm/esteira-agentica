@@ -41,12 +41,26 @@ def _todo_col_id(board: dict) -> str:
     return board.get("todo", "backlog")
 
 
+def _all_col_ids(board: dict) -> set[str]:
+    return set(board.get("columns", {}).keys())
+
+
 def _eligible_for_board(issues: list[dict], board: dict) -> list[dict]:
-    """Issues elegíveis para um board: não bloqueadas, com label do todo ou de coluna com agent."""
+    """Issues elegíveis para um board: não bloqueadas, com label do todo, de coluna com agent,
+    ou sem nenhuma label de coluna conhecida (tratadas como todo)."""
     todo = _todo_col_id(board)
     agent_cols = _board_agent_col_ids(board)
-    relevant = {todo} | agent_cols
-    return [i for i in issues if not _is_blocked(i) and bool(_labels(i) & relevant)]
+    all_cols = _all_col_ids(board)
+    result = []
+    for i in issues:
+        if _is_blocked(i):
+            continue
+        lbls = _labels(i)
+        col_labels = lbls & all_cols
+        # tem label de coluna relevante, ou não tem nenhuma label de coluna (→ todo)
+        if col_labels & ({todo} | agent_cols) or not col_labels:
+            result.append(i)
+    return result
 
 
 def _pick_from(issues: list[dict], board: dict) -> dict | None:
