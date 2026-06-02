@@ -213,6 +213,15 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             issue_labels = {l["name"] for l in issue.get("labels", [])}
             current_state["current_column"] = _detect_column(config, issue_labels)
             logs.log_issue_start(issue["number"], issue["title"])
+        elif current_state.get("current_step") is None and current_state.get("issue_number"):
+            # Retomando issue com state existente mas sem step ativo — re-detecta coluna pelas labels atuais
+            issue = github.get_issue(config, current_state["issue_number"])
+            issue_labels = {l["name"] for l in issue.get("labels", [])}
+            detected = _detect_column(config, issue_labels)
+            if detected and detected != current_state.get("current_column"):
+                logs.log_info(current_state["issue_number"], None,
+                              f"coluna re-detectada: '{current_state.get('current_column')}' → '{detected}'")
+                current_state["current_column"] = detected
 
     current_col = current_state.get("current_column")
 

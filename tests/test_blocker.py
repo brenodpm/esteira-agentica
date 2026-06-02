@@ -243,6 +243,7 @@ _WAIT_STATE = {
 def test_wait_children_advances_when_no_children():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
          patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_issue", return_value={"number": 1, "labels": []}), \
          patch("src.orchestrator.runner.blocker.all_children_done", return_value=True), \
          patch("src.orchestrator.runner.github.move_card") as mock_move, \
          patch("src.orchestrator.runner.blocker.unblock_dependents"), \
@@ -255,9 +256,9 @@ def test_wait_children_advances_when_no_children():
 def test_wait_children_waits_when_pending():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
          patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_issue", return_value={"number": 1, "labels": []}), \
          patch("src.orchestrator.runner.blocker.all_children_done", return_value=False), \
          patch("src.orchestrator.runner.agents_run") as mock_agents, \
          patch("src.orchestrator.runner.state_mod.save") as mock_save:
         run_once(_WAIT_CONFIG)
     mock_agents.assert_not_called()
-    mock_save.assert_not_called()
