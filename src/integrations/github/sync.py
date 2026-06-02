@@ -8,11 +8,14 @@ def _gql(query: str, **variables) -> dict:
     args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for k, v in variables.items():
         args += ["-f", f"{k}={v}"]
-    result = subprocess.run(args, capture_output=True, text=True, check=True)
+    result = subprocess.run(args, capture_output=True, text=True)
+    if not result.stdout:
+        raise RuntimeError(result.stderr.strip())
     data = json.loads(result.stdout)
-    if "errors" in data:
+    # Erros parciais (ex: org não encontrada mas user existe) são tolerados
+    if "errors" in data and "data" not in data:
         raise RuntimeError(data["errors"])
-    return data["data"]
+    return data.get("data", {})
 
 
 def _owner_id(owner: str) -> tuple[str, str]:

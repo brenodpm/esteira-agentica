@@ -39,6 +39,7 @@ def log_agent_end(
     rework: bool,
     status: str = "ok",
     detail: str | None = None,
+    output: str | None = None,
 ) -> None:
     record = {
         "ts": _now(), "event": "agent_end",
@@ -49,6 +50,8 @@ def log_agent_end(
     }
     if detail:
         record["detail"] = detail
+    if output:
+        record["output"] = output
     _append(record)
 
 

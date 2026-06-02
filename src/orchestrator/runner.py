@@ -182,6 +182,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             current_state["issue_number"], role, role,
             result["duration_s"], result["tokens_in"], result["tokens_out"],
             current_state.get("rework", False),
+            output=result["output"],
         )
     except Exception as exc:
         logs.log_error(current_state["issue_number"], role, str(exc))
@@ -197,8 +198,16 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
         rework=current_state.get("rework", False),
     )
 
-    github.post_comment(config, current_state["issue_number"], body=result["output"])
-    github.move_card(config, current_state["issue_number"], _column_name(config, current_col))
+    col_name = _column_name(config, current_col)
+    tokens_info = ""
+    if result["tokens_in"] or result["tokens_out"]:
+        tokens_info = f" | tokens: {result['tokens_in']}↑ {result['tokens_out']}↓"
+    github.post_comment(
+        config,
+        current_state["issue_number"],
+        body=f"✅ `{role}` concluído → `{col_name}` aguardando aprovação{tokens_info}",
+    )
+    github.move_card(config, current_state["issue_number"], col_name)
 
     current_state["current_step"] = role
     current_state["status"] = "awaiting_approval"

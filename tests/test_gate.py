@@ -111,7 +111,7 @@ def test_rework_metrics_record():
     assert mock_metrics.call_args[1]["rework"] is True
 
 
-# CT-062 — output postado como comentário na issue após execução do agente
+# CT-062 — comentário pontual postado na issue após execução do agente (sem output completo)
 def test_post_comment_after_agent():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_IDLE_NEW)), \
          patch("src.orchestrator.runner.blocker.detect_deadlock", return_value=False), \
@@ -124,7 +124,10 @@ def test_post_comment_after_agent():
          patch("src.orchestrator.runner.github.move_card"), \
          patch("src.orchestrator.runner.state_mod.save"):
         run_once(_CONFIG)
-    assert "artefato gerado" in mock_comment.call_args[1]["body"]
+    body = mock_comment.call_args[1]["body"]
+    assert "artefato gerado" not in body  # output completo não vai para a issue
+    assert "requirements" in body          # agente mencionado
+    assert "aguardando aprovação" in body  # status pontual
 
 
 # CT-063 — estado salvo com status="awaiting_approval" após execução do agente
