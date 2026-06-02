@@ -8,7 +8,7 @@ def run(
     prompt: str,
     timeout_s: int = 300,
 ) -> dict:
-    cmd = ["kiro-cli", "chat", "--agent", role, "--no-interactive"]
+    cmd = ["kiro-cli", "chat", "--agent", role, "--no-interactive", "--trust-all-tools"]
     for path in context_files:
         cmd += ["--context", path]
 

@@ -271,12 +271,22 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
 
     # commit + push + PR quando a coluna tem git_commit=true
     pr_url = None
+    commit_ok = not _git_commit_flag(config, current_col)  # True se não precisa commitar
     if _git_commit_flag(config, current_col):
         branch = git.current_branch()
         flow = _flow_config(config, current_col)
         try:
-            git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
+            committed = git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
+            if not committed:
+                logs.log_error(current_state["issue_number"], role, "agente não gravou arquivos — reexecutando na próxima rodada")
+                current_state["last_error"] = "agente não produziu artefatos"
+                current_state["status"] = "idle"
+                current_state["rework"] = True
+                state_mod.save(current_state)
+                return
+            commit_ok = True
             git.push(branch)
+            logs.log_info(current_state["issue_number"], role, f"push concluído para branch '{branch}'")
             pr = github.open_pr(
                 config,
                 title=f"[#{current_state['issue_number']}] {current_state.get('current_feature', '')}",
@@ -285,8 +295,14 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
                 base=flow.get("merge", "main"),
             )
             pr_url = pr.get("url", "")
+            logs.log_info(current_state["issue_number"], role, f"PR aberto: {pr_url}")
         except RuntimeError as e:
             logs.log_error(current_state["issue_number"], role, f"git commit/push/PR falhou: {e}")
+            current_state["last_error"] = f"git commit/push/PR falhou: {e}"
+            current_state["status"] = "idle"
+            current_state["rework"] = True
+            state_mod.save(current_state)
+            return
 
     comment = f"✅ `{role}` concluído → `{col_name}` aguardando aprovação{tokens_info}"
     if pr_url:
@@ -295,6 +311,8 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     github.move_card(config, current_state["issue_number"], col_name)
 
     current_state["current_step"] = role
+    current_state["current_column"] = current_col
+    current_state["last_error"] = None
     current_state["status"] = "awaiting_approval"
     current_state["rework"] = False
     state_mod.save(current_state)
