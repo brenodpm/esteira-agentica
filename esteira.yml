@@ -1,0 +1,290 @@
+pipe:
+  agent:
+    timeout: 30
+    sleeptime: 5
+
+doc: docs/
+
+git:
+  repo: "brenodpm/esteira-agentica"
+  flow:
+    base: main
+    release:
+      prefix: release
+      description: "Branch de release do projeto"
+      create: main
+      merge: main
+    feature:
+      prefix: feature
+      description: "Branch de feature de desenvolvimento"
+      create: main
+      merge: release
+    doc:
+      prefix: doc
+      description: "Branch para tarefas de documentação e planejamento"
+      create: main
+      merge: release
+    hotfix:
+      prefix: hotfix
+      description: "Usada para correção de bugs em produção"
+      create: main
+      merge: main
+    bugfix:
+      prefix: fix
+      description: "Usada para correção de bugs em homologação"
+      create: release
+      merge: release
+
+boards:
+
+  # ──────────────────────────────────────────────
+  # DEMANDA — ciclo completo de uma demanda negocial
+  # Prioridade 0: board principal
+  # ──────────────────────────────────────────────
+  demanda:
+    name: "Demandas"
+    todo: backlog
+    priority: 4
+    
+    columns:
+      backlog:
+        name: Backlog
+        desc: "Humano criou a demanda"
+        change:
+          advance: analise-negocio
+          cancelar: cancelado
+      analise-negocio:
+        name: "Análise de Negócio"
+        desc: "Agente de negócio entende a demanda e cria documentações negociais"
+        agent: product
+        acao: "Entender a demanda, produzir visão de produto, problem-space e épicos"
+        change:
+          advance: aprovacao-negocio
+      aprovacao-negocio:
+        name: "Aprovação Negócio"
+        desc: "Humano aprova os artefatos negociais"
+        change:
+          advance: criacao-stories
+          reprovar: analise-negocio
+      criacao-stories:
+        name: "Criação de User Stories"
+        desc: "Agente de negócio cria as user stories da demanda"
+        agent: product
+        acao: "Criar user stories detalhadas com critérios de aceitação para a demanda aprovada"
+        change:
+          advance: aguardando-stories
+      aguardando-stories:
+        name: "Aguardando Stories"
+        desc: "Aguarda a conclusão de todas as user stories vinculadas"
+        wait_children: true
+        change:
+          advance: homologacao
+      homologacao:
+        name: "Homologação"
+        desc: "Humano efetua homologação"
+        change:
+          advance: publicacao
+          reprovar: aguardando-stories
+      publicacao:
+        name: "Publicação"
+        desc: "Agente DevOps publica em produção"
+        agent: devops
+        acao: "Publicar em produção conforme runbook, atualizar variáveis e executar deploy"
+        change:
+          advance: documentacao
+      documentacao:
+        name: "Documentação"
+        desc: "Agente de negócio cria ou atualiza documentação pública e README"
+        agent: product
+        acao: "Atualizar README e documentação pública refletindo as mudanças entregues"
+        change:
+          advance: otimizacao
+      otimizacao:
+        name: "Otimização"
+        desc: "Agente especialista em IA analisa desempenho e melhora os agentes"
+        agent: optimizer
+        acao: "Analisar métricas e logs da demanda, propor melhorias nos agentes para aumentar desempenho e reduzir custos"
+        change:
+          advance: concluido
+      concluido:
+        name: "Concluído"
+      cancelado:
+        name: "Cancelado"
+
+  # ──────────────────────────────────────────────
+  # USER STORY — ciclo de uma user story
+  # Prioridade 1: iniciado após demandas
+  # ──────────────────────────────────────────────
+  story:
+    name: "User Stories"
+    todo: backlog
+    priority: 3
+    columns:
+      backlog:
+        name: Backlog
+        desc: "Story aguardando início"
+        change:
+          advance: requisitos
+          cancelar: cancelado
+      requisitos:
+        name: "Requisitos"
+        desc: "Agente de requisitos levanta requisitos e complementa documentações"
+        agent: requirements
+        acao: "Levantar requisitos funcionais e não-funcionais, complementar documentações negociais com critérios técnicos"
+        change:
+          advance: arquitetura
+      arquitetura:
+        name: "Arquitetura"
+        desc: "Agente de arquitetura define a arquitetura da story"
+        agent: architecture
+        acao: "Definir arquitetura técnica, ADRs e constraints para a story"
+        change:
+          advance: validacao-artefatos
+      validacao-artefatos:
+        name: "Validação de Artefatos"
+        desc: "Humano valida os artefatos de requisitos e arquitetura"
+        change:
+          advance: planejamento-tecnico
+          reprovar: requisitos
+      planejamento-tecnico:
+        name: "Planejamento Técnico"
+        desc: "Agente líder técnico define as tarefas de desenvolvimento"
+        agent: tech-lead
+        acao: "Decompor a story em tarefas técnicas rastreáveis e criar as issues de task no board"
+        change:
+          advance: aguardando-tasks
+      aguardando-tasks:
+        name: "Aguardando Tasks"
+        desc: "Aguarda a conclusão de todas as tasks vinculadas"
+        wait_children: true
+        change:
+          advance: change-file
+      change-file:
+        name: "Change File"
+        desc: "Agente líder técnico cria o change file da story"
+        agent: tech-lead
+        acao: "Criar change file documentando todas as alterações entregues na story"
+        change:
+          advance: concluido
+      concluido:
+        name: "Concluído"
+      cancelado:
+        name: "Cancelado"
+
+  # ──────────────────────────────────────────────
+  # TASK — ciclo de uma tarefa de desenvolvimento
+  # Prioridade 2
+  # ──────────────────────────────────────────────
+  task:
+    name: "Tasks"
+    todo: backlog
+    priority: 1
+    columns:
+      backlog:
+        name: Backlog
+        desc: "Task aguardando início"
+        change:
+          advance: casos-de-teste
+          cancelar: cancelado
+      casos-de-teste:
+        name: "Casos de Teste"
+        desc: "Agente de qualidade escreve os casos de teste"
+        agent: quality
+        acao: "Escrever casos de teste baseados nos critérios de aceitação da task"
+        change:
+          advance: desenvolvimento
+      desenvolvimento:
+        name: "Desenvolvimento"
+        desc: "Agente de engenharia cria código e cobertura de testes (TDD)"
+        agent: engineering
+        acao: "Implementar a task seguindo TDD, garantindo cobertura dos casos de teste definidos"
+        change:
+          advance: execucao-testes
+          bloquear: bloqueado
+      execucao-testes:
+        name: "Execução de Testes"
+        desc: "Agente de qualidade executa os casos de teste"
+        agent: quality
+        acao: "Executar casos de teste, registrar resultados e reportar falhas"
+        change:
+          advance: code-review
+          falha: desenvolvimento
+      code-review:
+        name: "Code Review"
+        desc: "Humano faz code review do PR"
+        change:
+          advance: concluido
+          reprovar: desenvolvimento
+      bloqueado:
+        name: "Bloqueado"
+        desc: "Task bloqueada por dependência"
+        change:
+          advance: desenvolvimento
+          cancelar: cancelado
+      concluido:
+        name: "Concluído"
+      cancelado:
+        name: "Cancelado"
+
+  # ──────────────────────────────────────────────
+  # BUG — correção de bug
+  # Prioridade 2 (mesmo nível que tasks)
+  # ──────────────────────────────────────────────
+  bug:
+    name: "Bugs"
+    todo: backlog
+    priority: 0
+    columns:
+      backlog:
+        name: Backlog
+        desc: "Bug reportado aguardando correção"
+        change:
+          advance: correcao
+          cancelar: cancelado
+      correcao:
+        name: "Correção"
+        desc: "Agente de engenharia corrige o problema"
+        agent: engineering
+        acao: "Corrigir o bug reportado, garantindo que os testes existentes continuem passando"
+        change:
+          advance: reteste
+      reteste:
+        name: "Reteste"
+        desc: "Agente de qualidade refaz os testes"
+        agent: quality
+        acao: "Reexecutar casos de teste e validar que o bug foi corrigido sem regressão"
+        change:
+          advance: concluido
+          falha: correcao
+      concluido:
+        name: "Concluído"
+      cancelado:
+        name: "Cancelado"
+
+  # ──────────────────────────────────────────────
+  # DÉBITO — sanação de débito técnico ou negocial
+  # Prioridade 2 (mesmo nível que tasks)
+  # ──────────────────────────────────────────────
+  debito:
+    name: "Débitos"
+    todo: backlog
+    priority: 2
+    columns:
+      backlog:
+        name: Backlog
+        desc: "Débito registrado aguardando resolução"
+        change:
+          advance: resolucao
+          cancelar: cancelado
+      resolucao:
+        name: "Resolução"
+        desc: "Agente ou humano sana o débito"
+        agent: engineering
+        acao: "Sanar o débito técnico ou negocial conforme descrito, documentando a solução"
+        change:
+          advance: concluido
+          cancelar: cancelado
+      concluido:
+        name: "Concluído"
+      cancelado:
+        name: "Cancelado"

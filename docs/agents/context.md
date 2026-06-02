@@ -18,6 +18,8 @@ Esteira de desenvolvimento multi-agentes de IA com execução manual.
 * É PROIBIDO continuar execução com inconsistências entre documentos
 * Divergências entre artefatos devem gerar débito obrigatório
 * Atualizar status das tarefas
+* **Não prometer o que não se sabe se pode ser cumprido**
+* **Ideias cuja viabilidade é incerta devem ser explicitamente marcadas como incerteza e sinalizadas para amadurecimento futuro — nunca tratadas como decisão**
 
 ---
 
@@ -177,3 +179,7 @@ Uma etapa termina quando:
 * Evitar reprocessamento
 * Minimizar consumo de tokens
 
+
+## Changes
+- Adicionadas duas core rules sobre honestidade e incerteza
+- Motivo: diretriz global definida pelo usuário para todos os agentes
