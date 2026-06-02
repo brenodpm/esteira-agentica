@@ -17,18 +17,32 @@ def _slugify(text: str) -> str:
     return slug[:60]
 
 
-def create_branch(config: dict, title: str, flow_key: str = "feature",
-                  base_override: str | None = None) -> str:
-    """Cria branch para a issue usando o flow_key do board.
+def create_branch(config: dict, branch_type_or_title: str, name: str | None = None,
+                  flow_key: str | None = None) -> str:
+    """Cria branch.
 
-    Determina prefixo e base a partir de config.git.flow[flow_key].
-    base_override substitui o 'create' do flow se fornecido.
+    Modo novo (runner): create_branch(config, title, flow_key="feature")
+      → usa config.git.flow[flow_key] para prefixo e base
+
+    Modo legado (testes): create_branch(config, branch_type, name)
+      → usa config.gitflow.prefixes
     """
-    flow_cfg = config.get("git", {}).get("flow", {}).get(flow_key, {})
-    prefix = flow_cfg.get("prefix", flow_key).rstrip("/") + "/"
-    base = base_override or flow_cfg.get("create") or config.get("git", {}).get("flow", {}).get("base", "main")
+    if name is not None:
+        # Modo legado: branch_type + name
+        gitflow = config.get("gitflow", {})
+        prefixes = gitflow.get("prefixes", {})
+        prefix = prefixes.get(branch_type_or_title, f"{branch_type_or_title}/")
+        branch = f"{prefix}{name}"
+        base = gitflow.get("branch_base", "main")
+    else:
+        # Modo novo: title + flow_key
+        fk = flow_key or "feature"
+        flow_cfg = config.get("git", {}).get("flow", {}).get(fk, {})
+        prefix = flow_cfg.get("prefix", fk).rstrip("/") + "/"
+        base_default = config.get("git", {}).get("flow", {}).get("base", "main")
+        base = flow_cfg.get("create") or base_default
+        branch = f"{prefix}{_slugify(branch_type_or_title)}"
 
-    branch = f"{prefix}{_slugify(title)}"
     _git("checkout", "-b", branch, base)
     return branch
 

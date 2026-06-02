@@ -122,9 +122,9 @@ def move_card(config: dict, issue_number: int, column_name: str) -> None:
 
 def open_pr(config: dict, title: str, body: str, head: str, base: str) -> dict:
     repo = config["repo"]
-    out = _gh("pr", "create", "--repo", repo, "--title", title, "--body", body,
-              "--head", head, "--base", base, "--json", "number,url,title")
-    return json.loads(out)
+    url = _gh("pr", "create", "--repo", repo, "--title", title, "--body", body,
+              "--head", head, "--base", base).strip()
+    return {"url": url}
 
 
 def create_issue(config: dict, title: str, body: str, labels: list[str]) -> dict:
