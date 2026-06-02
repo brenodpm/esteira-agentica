@@ -33,10 +33,11 @@ def _append(record: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def _append_output(issue_number: int, agent: str, output: str) -> None:
+def _append_output(issue_number: int, agent: str, output: str, run_name: str = "") -> None:
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    header = f"\n{'='*60}\n[{_now()}] issue #{issue_number} | agent: {agent}\n{'='*60}\n"
-    with _output_path().open("a", encoding="utf-8") as f:
+    title = run_name or f"#{issue_number} / {agent}"
+    header = f"\n{'='*60}\n[{_now()}] {title}\n{'='*60}\n"
+    with _output_path().open("a", encoding="utf-8", errors="replace") as f:
         f.write(header + output + "\n")
 
 
@@ -77,6 +78,7 @@ def log_agent_end(
     status: str = "ok",
     detail: str | None = None,
     output: str | None = None,
+    run_name: str = "",
 ) -> None:
     tok = f" | tokens: {tokens_in}↑ {tokens_out}↓" if (tokens_in or tokens_out) else ""
     _print(f"  ✓ agente '{agent}' concluído em {duration_s:.1f}s{tok}")
@@ -91,7 +93,7 @@ def log_agent_end(
         record["detail"] = detail
     _append(record)
     if output:
-        _append_output(issue_number, agent, output)
+        _append_output(issue_number, agent, output, run_name=run_name)
 
 
 def log_gate(issue_number: int, step: str, decision: str) -> None:

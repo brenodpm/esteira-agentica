@@ -49,34 +49,49 @@ def remove_label(config: dict, issue_number: int, label: str) -> None:
     _gh("issue", "edit", str(issue_number), "--repo", repo, "--remove-label", label)
 
 
-def _get_project_number(config: dict) -> str | None:
-    """Retorna o número do primeiro projeto do owner."""
+def _get_projects(owner: str) -> list[dict]:
+    """Retorna lista de {number, id, title} dos projetos do owner."""
+    out = _gh("project", "list", "--owner", owner, "--format", "json",
+              "--jq", ".projects[] | {number, id, title}")
+    projects = []
+    for line in out.strip().splitlines():
+        line = line.strip()
+        if line:
+            projects.append(json.loads(line))
+    return projects
+
+
+def _find_project_for_board(config: dict, column_name: str) -> dict | None:
+    """Retorna o projeto (number + id) que contém a coluna com o nome dado."""
     owner = config["repo"].split("/")[0]
-    try:
-        out = _gh("project", "list", "--owner", owner, "--format", "json",
-                  "--jq", ".projects[0].number")
-        return out.strip() or None
-    except RuntimeError:
-        return None
+    projects = _get_projects(owner)
+    projects_by_title = {p["title"]: p for p in projects}
+
+    for board in config.get("boards", {}).values():
+        board_name = board.get("name", "")
+        for col in board.get("columns", {}).values():
+            if col.get("name") == column_name:
+                return projects_by_title.get(board_name)
+    return None
 
 
 def move_card(config: dict, issue_number: int, column_name: str) -> None:
     """Move issue para coluna do board pelo nome da coluna definido em esteira.yml."""
     owner = config["repo"].split("/")[0]
-    project_number = _get_project_number(config)
-    if not project_number:
+    project = _find_project_for_board(config, column_name)
+    if not project:
         return
 
+    project_number = str(project["number"])
+    project_id = project["id"]
     repo = config["repo"]
     issue_url = f"https://github.com/{repo}/issues/{issue_number}"
 
-    # Obtém o item ID da issue no projeto
     try:
         item_id = _gh("project", "item-list", project_number,
                       "--owner", owner, "--format", "json",
                       "--jq", f'.items[] | select(.content.url=="{issue_url}") | .id').strip()
         if not item_id:
-            # Adiciona ao projeto se ainda não estiver
             _gh("project", "item-add", project_number, "--owner", owner, "--url", issue_url)
             item_id = _gh("project", "item-list", project_number,
                           "--owner", owner, "--format", "json",
@@ -87,7 +102,6 @@ def move_card(config: dict, issue_number: int, column_name: str) -> None:
     if not item_id:
         return
 
-    # Obtém o field ID do campo Status
     try:
         field_info = _gh("project", "field-list", project_number,
                          "--owner", owner, "--format", "json",
@@ -100,7 +114,7 @@ def move_card(config: dict, issue_number: int, column_name: str) -> None:
         if not option:
             return
         _gh("project", "item-edit", "--id", item_id,
-            "--field-id", field_id, "--project-id", project_number,
+            "--field-id", field_id, "--project-id", project_id,
             "--single-select-option-id", option["id"])
     except (RuntimeError, StopIteration, json.JSONDecodeError, KeyError):
         return
