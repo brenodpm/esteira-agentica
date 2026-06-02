@@ -17,34 +17,32 @@ def _slugify(text: str) -> str:
     return slug[:60]
 
 
-def create_branch(config: dict, branch_type_or_title: str, name: str | None = None) -> str:
-    """Cria branch a partir do título da issue ou do tipo+nome explícito.
+def create_branch(config: dict, branch_type_or_title: str, name: str | None = None,
+                  flow_key: str | None = None) -> str:
+    """Cria branch.
 
-    Assinatura nova: create_branch(config, feature_title)
-    Assinatura legada: create_branch(config, branch_type, name)
+    Modo novo (runner): create_branch(config, title, flow_key="feature")
+      → usa config.git.flow[flow_key] para prefixo e base
+
+    Modo legado (testes): create_branch(config, branch_type, name)
+      → usa config.gitflow.prefixes
     """
-    gitflow = config.get("gitflow", {})
-
-    if name is None:
-        # Nova assinatura: branch_type_or_title é o título da issue
-        flow = gitflow.get("flow", {})
-        prefix = "feature/"
-        for cfg in flow.values():
-            if isinstance(cfg, dict) and cfg.get("prefix"):
-                prefix = cfg["prefix"].rstrip("/") + "/"
-                break
-        # Fallback para prefixes legado
-        if prefix == "feature/" and "prefixes" in gitflow:
-            prefix = gitflow["prefixes"].get("feature", "feature/")
-        slug = _slugify(branch_type_or_title)
-        branch = f"{prefix}{slug}"
-    else:
-        # Assinatura legada: branch_type + name
+    if name is not None:
+        # Modo legado: branch_type + name
+        gitflow = config.get("gitflow", {})
         prefixes = gitflow.get("prefixes", {})
         prefix = prefixes.get(branch_type_or_title, f"{branch_type_or_title}/")
         branch = f"{prefix}{name}"
+        base = gitflow.get("branch_base", "main")
+    else:
+        # Modo novo: title + flow_key
+        fk = flow_key or "feature"
+        flow_cfg = config.get("git", {}).get("flow", {}).get(fk, {})
+        prefix = flow_cfg.get("prefix", fk).rstrip("/") + "/"
+        base_default = config.get("git", {}).get("flow", {}).get("base", "main")
+        base = flow_cfg.get("create") or base_default
+        branch = f"{prefix}{_slugify(branch_type_or_title)}"
 
-    base = gitflow.get("branch_base", "main")
     _git("checkout", "-b", branch, base)
     return branch
 
@@ -63,3 +61,12 @@ def push(branch: str) -> None:
 
 def current_branch() -> str:
     return _git("rev-parse", "--abbrev-ref", "HEAD").strip()
+
+
+def delete_branch(branch: str) -> None:
+    _git("checkout", "main")
+    _git("branch", "-D", branch)
+    try:
+        _git("push", "origin", "--delete", branch)
+    except RuntimeError:
+        pass  # branch remota pode já não existir

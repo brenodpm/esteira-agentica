@@ -13,6 +13,28 @@ from src import logs
 # Board helpers
 # ---------------------------------------------------------------------------
 
+def _git_merge_pr(config: dict, branch: str) -> None:
+    """Faz merge do PR aberto para a branch via gh."""
+    import subprocess
+    repo = config["repo"]
+    result = subprocess.run(
+        ["gh", "pr", "merge", "--repo", repo, "--merge", "--delete-branch", branch],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip())
+
+
+def _git_commit_flag(config: dict, column_id: str) -> bool:
+    col = _find_column(config, column_id)
+    return bool(col.get("git_commit")) if col else False
+
+
+def _git_merge_flag(config: dict, column_id: str) -> bool:
+    col = _find_column(config, column_id)
+    return bool(col.get("git_merge")) if col else False
+
+
 def _boards(config: dict) -> dict:
     return config.get("boards", {})
 
@@ -23,6 +45,21 @@ def _find_column(config: dict, column_id: str) -> dict | None:
         if col is not None:
             return col
     return None
+
+
+def _find_board_for_column(config: dict, column_id: str) -> dict | None:
+    for board in _boards(config).values():
+        if column_id in board.get("columns", {}):
+            return board
+    return None
+
+
+def _flow_config(config: dict, column_id: str) -> dict:
+    """Retorna o dict do flow (create, merge, prefix) para a coluna, ou defaults."""
+    board = _find_board_for_column(config, column_id)
+    flow_key = board.get("flow", "feature") if board else "feature"
+    flow = config.get("git", {}).get("flow", {})
+    return flow.get(flow_key, {"create": "main", "merge": "main", "prefix": flow_key})
 
 
 def _column_name(config: dict, column_id: str) -> str:
@@ -92,6 +129,16 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
 
         if approval == "approved":
             github.remove_label(config, current_state["issue_number"], "approved")
+
+            # merge + delete branch quando a coluna tem git_merge=true
+            if current_col and _git_merge_flag(config, current_col):
+                try:
+                    branch = git.current_branch()
+                    _git_merge_pr(config, branch)
+                    git.delete_branch(branch)
+                except RuntimeError as e:
+                    logs.log_error(current_state["issue_number"], None, f"merge/delete branch falhou: {e}")
+
             next_col_id = _advance(config, current_col) if current_col else None
             next_col_cfg = _find_column(config, next_col_id) if next_col_id else None
             next_has_agent = next_col_cfg.get("agent") if next_col_cfg else False
@@ -174,10 +221,13 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     if not role:
         return
 
-    # Cria branch na primeira execução
+    # Cria branch na primeira execução usando create do flow do board
     if current_state.get("current_step") is None:
+        flow = _flow_config(config, current_col)
+        board = _find_board_for_column(config, current_col)
+        flow_key = board.get("flow", "feature") if board else "feature"
         try:
-            git.create_branch(config, current_state["current_feature"])
+            git.create_branch(config, current_state["current_feature"], flow_key=flow_key)
         except RuntimeError:
             pass
 
@@ -192,11 +242,13 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     logs.log_agent_start(current_state["issue_number"], role, role)
     try:
         result = agents_run(role=role, context_files=[], prompt=prompt)
+        run_name = f"#{current_state['issue_number']} {current_state.get('current_feature', '')} / {role}"
         logs.log_agent_end(
             current_state["issue_number"], role, role,
             result["duration_s"], result["tokens_in"], result["tokens_out"],
             current_state.get("rework", False),
             output=result["output"],
+            run_name=run_name,
         )
     except Exception as exc:
         logs.log_error(current_state["issue_number"], role, str(exc))
@@ -216,11 +268,30 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     tokens_info = ""
     if result["tokens_in"] or result["tokens_out"]:
         tokens_info = f" | tokens: {result['tokens_in']}↑ {result['tokens_out']}↓"
-    github.post_comment(
-        config,
-        current_state["issue_number"],
-        body=f"✅ `{role}` concluído → `{col_name}` aguardando aprovação{tokens_info}",
-    )
+
+    # commit + push + PR quando a coluna tem git_commit=true
+    pr_url = None
+    if _git_commit_flag(config, current_col):
+        branch = git.current_branch()
+        flow = _flow_config(config, current_col)
+        try:
+            git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
+            git.push(branch)
+            pr = github.open_pr(
+                config,
+                title=f"[#{current_state['issue_number']}] {current_state.get('current_feature', '')}",
+                body=f"Gerado automaticamente após execução do agente `{role}`.\n\nFecha #{current_state['issue_number']}",
+                head=branch,
+                base=flow.get("merge", "main"),
+            )
+            pr_url = pr.get("url", "")
+        except RuntimeError as e:
+            logs.log_error(current_state["issue_number"], role, f"git commit/push/PR falhou: {e}")
+
+    comment = f"✅ `{role}` concluído → `{col_name}` aguardando aprovação{tokens_info}"
+    if pr_url:
+        comment += f"\nPR: {pr_url}"
+    github.post_comment(config, current_state["issue_number"], body=comment)
     github.move_card(config, current_state["issue_number"], col_name)
 
     current_state["current_step"] = role
