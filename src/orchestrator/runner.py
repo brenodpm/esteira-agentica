@@ -54,6 +54,11 @@ def _find_board_for_column(config: dict, column_id: str) -> dict | None:
     return None
 
 
+def _board_name_for_column(config: dict, column_id: str) -> str | None:
+    board = _find_board_for_column(config, column_id)
+    return board.get("name") if board else None
+
+
 def _flow_config(config: dict, column_id: str) -> dict:
     """Retorna o dict do flow (create, merge, prefix) para a coluna, ou defaults."""
     board = _find_board_for_column(config, column_id)
@@ -90,13 +95,33 @@ def _is_todo(config: dict, column_id: str) -> bool:
 
 
 def _detect_column(config: dict, issue_labels: set[str]) -> str | None:
-    """Retorna o id da coluna correspondente à label da issue, ou a coluna todo do primeiro board."""
+    """Retorna o id da coluna correspondente à label da issue.
+
+    Prioridade de detecção:
+    1. Label igual ao id de uma coluna (ex: 'correcao')
+    2. Label igual ao nome de um board (ex: 'bug') → retorna o todo desse board
+    3. Fallback: todo do board de maior prioridade
+    """
+    # 1. label bate com col_id
     for board in _boards(config).values():
         for col_id in board.get("columns", {}):
             if col_id in issue_labels:
                 return col_id
-        return board.get("todo")
-    return None
+
+    # 2. label bate com board key (ex: 'bug', 'demanda', 'story')
+    for board_key, board in _boards(config).items():
+        if board_key in issue_labels or board.get("name", "").lower() in issue_labels:
+            return board.get("todo")
+
+    # 3. fallback: todo do board de maior prioridade
+    fallback = None
+    fallback_priority = -1
+    for board in _boards(config).values():
+        p = board.get("priority", 0)
+        if p > fallback_priority:
+            fallback_priority = p
+            fallback = board.get("todo")
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +220,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     if current_col and _is_todo(config, current_col):
         next_col_id = _advance(config, current_col)
         if next_col_id:
-            github.move_card(config, current_state["issue_number"], _column_name(config, next_col_id))
+            github.move_card(config, current_state["issue_number"], _column_name(config, next_col_id), _board_name_for_column(config, next_col_id))
             current_state["current_column"] = next_col_id
             current_col = next_col_id
             state_mod.save(current_state)
@@ -208,7 +233,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
         if blocker.all_children_done(config, current_state["issue_number"]):
             next_col_id = _advance(config, current_col)
             if next_col_id:
-                github.move_card(config, current_state["issue_number"], _column_name(config, next_col_id))
+                github.move_card(config, current_state["issue_number"], _column_name(config, next_col_id), _board_name_for_column(config, next_col_id))
                 current_state["current_column"] = next_col_id
                 current_col = next_col_id
                 state_mod.save(current_state)
@@ -292,7 +317,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     if pr_url:
         comment += f"\nPR: {pr_url}"
     github.post_comment(config, current_state["issue_number"], body=comment)
-    github.move_card(config, current_state["issue_number"], col_name)
+    github.move_card(config, current_state["issue_number"], col_name, _board_name_for_column(config, current_col))
 
     current_state["current_step"] = role
     current_state["status"] = "awaiting_approval"
@@ -323,7 +348,7 @@ def _finish_issue(config: dict, state: dict, sprint_issues: list[int], done_col_
     blocker.unblock_dependents(config, state["issue_number"])
     logs.log_issue_done(state["issue_number"])
     sprint_issues.append(state["issue_number"])
-    github.move_card(config, state["issue_number"], _column_name(config, done_col_id))
+    github.move_card(config, state["issue_number"], _column_name(config, done_col_id), _board_name_for_column(config, done_col_id))
     _reset_state(state)
 
 
