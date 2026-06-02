@@ -72,13 +72,13 @@ def _create_status_field(project_id: str) -> dict:
     return data["createProjectV2Field"]["projectV2Field"]
 
 
-def _add_status_option(project_id: str, field_id: str, option_name: str) -> None:
-    """Adiciona uma opção ao campo Status."""
+def _add_status_option(field_id: str, existing_options: list[str], option_name: str) -> None:
+    """Adiciona uma opção ao campo Status reenviando todas as opções existentes + a nova."""
+    all_options = existing_options + [option_name]
+    opts_gql = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in all_options) + "]"
     _gql(
-        "mutation($pid:ID!,$fid:ID!,$name:String!){updateProjectV2Field(input:{projectId:$pid,fieldId:$fid,singleSelectOptions:[{name:$name,color:GRAY,description:\"\"}]}){projectV2Field{id}}}",
-        pid=project_id,
+        f'mutation($fid:ID!){{updateProjectV2Field(input:{{fieldId:$fid,singleSelectOptions:{opts_gql}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
         fid=field_id,
-        name=option_name,
     )
 
 
@@ -134,7 +134,8 @@ def sync_boards(config: dict) -> None:
         for col_id, col in columns.items():
             col_name = col.get("name", col_id)
             if col_name not in existing_options:
-                _add_status_option(project_id, field_id, col_name)
+                _add_status_option(field_id, list(existing_options), col_name)
+                existing_options.add(col_name)
                 print(f"      [+] coluna '{col_name}' adicionada")
             else:
                 print(f"      [ok] coluna '{col_name}' já existe")
