@@ -1,15 +1,6 @@
 import subprocess
 import time
 
-AGENT_ROLES: list[str] = [
-    "product",
-    "requirements",
-    "architecture",
-    "tech-lead",
-    "engineering",
-    "quality",
-]
-
 
 def run(
     role: str,
@@ -17,7 +8,7 @@ def run(
     prompt: str,
     timeout_s: int = 300,
 ) -> dict:
-    cmd = ["kiro", "chat", "--agent", role, "--no-interactive"]
+    cmd = ["kiro-cli", "chat", "--agent", role, "--no-interactive"]
     for path in context_files:
         cmd += ["--context", path]
 
@@ -50,18 +41,19 @@ def run(
     }
 
 
-def build_prompt(role: str, issue: dict, rework: bool = False) -> str:
+def build_prompt(role: str, issue: dict, rework: bool = False, acao: str | None = None) -> str:
     """Build a structured prompt from a GitHub issue for a specific agent role."""
     number = issue.get("number", "?")
     title = issue.get("title", "")
     body = issue.get("body") or ""
 
     rework_note = "\n\n> ⚠️ REWORK: esta etapa foi rejeitada. Revise o artefato anterior antes de produzir a nova versão." if rework else ""
+    acao_note = f"\n\nAção: {acao}" if acao else ""
 
     return (
         f"Etapa: {role}\n"
         f"Issue: #{number} — {title}\n"
-        f"{rework_note}\n\n"
+        f"{acao_note}{rework_note}\n\n"
         f"{body}".strip()
     )
 

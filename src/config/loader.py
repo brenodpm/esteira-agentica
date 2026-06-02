@@ -1,45 +1,57 @@
-import json
+import yaml
 from pathlib import Path
 
-_DEFAULT_GITFLOW = {
-    "branch_base": "develop",
-    "prefixes": {
-        "feature": "feature/",
-        "fix": "fix/",
-        "release": "release/",
-        "hotfix": "hotfix/",
-    },
-}
 
-_DEFAULT_BOARD = {
-    "columns": ["Backlog", "In Progress", "Done"],
-    "labels": {},
-}
+def load(path: "str | Path" = "esteira.yml") -> dict:
+    """Carrega configuração a partir de esteira.yml.
 
-_DEFAULT_AGENTS_SEQUENCE = [
-    "requirements",
-    "architecture",
-    "engineering",
-    "quality",
-]
+    Campos obrigatórios: git.repo, doc, boards (ao menos um board).
+    Retorna dict normalizado com defaults aplicados.
+    """
+    raw = yaml.safe_load(Path(path).read_text()) or {}
 
+    git = raw.get("git") or {}
+    repo = git.get("repo", "").strip()
+    if not repo:
+        raise ValueError("Campo obrigatório 'git.repo' ausente ou vazio em esteira.yml")
 
-def load(path: "str | Path" = "config/project.json") -> dict:
-    data = json.loads(Path(path).read_text())
+    doc = (raw.get("doc") or "").strip()
+    if not doc:
+        raise ValueError("Campo obrigatório 'doc' ausente ou vazio em esteira.yml")
 
-    if not data.get("repo"):
-        raise ValueError("Campo obrigatório 'repo' ausente ou vazio em config")
+    boards = raw.get("boards") or {}
+    if not boards:
+        raise ValueError("Campo obrigatório 'boards' ausente ou vazio em esteira.yml")
 
-    gitflow = data.get("gitflow", {})
-    gitflow.setdefault("branch_base", _DEFAULT_GITFLOW["branch_base"])
-    gitflow.setdefault("prefixes", _DEFAULT_GITFLOW["prefixes"])
-    data["gitflow"] = gitflow
+    # Normaliza priority de cada board (default 0) e valida advance
+    for board_id, board in boards.items():
+        board.setdefault("priority", 0)
+        for col_id, col in board.get("columns", {}).items():
+            change = col.get("change")
+            if change is not None and "advance" not in change:
+                raise ValueError(
+                    f"Coluna '{col_id}' do board '{board_id}' define 'change' sem 'advance' obrigatório"
+                )
 
-    board = data.get("board", {})
-    board.setdefault("columns", _DEFAULT_BOARD["columns"])
-    board.setdefault("labels", _DEFAULT_BOARD["labels"])
-    data["board"] = board
+    # Normaliza gitflow
+    flow = git.get("flow") or {}
+    base = flow.get("base", "main")
 
-    data.setdefault("agents_sequence", _DEFAULT_AGENTS_SEQUENCE)
+    # Normaliza pipe (configurações do agente)
+    pipe = raw.get("pipe") or {}
+    agent_cfg = pipe.get("agent") or {}
 
-    return data
+    return {
+        "repo": repo,
+        "doc": doc,
+        "boards": boards,
+        "gitflow": {
+            "branch_base": base,
+            "flow": {k: v for k, v in flow.items() if k != "base"},
+        },
+        "pipe": {
+            "timeout": agent_cfg.get("timeout"),
+            "sleeptime": agent_cfg.get("sleeptime"),
+        },
+        "_raw": raw,
+    }

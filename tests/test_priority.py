@@ -6,10 +6,8 @@ from src.orchestrator.runner import run_once
 
 _CONFIG = {
     "repo": "org/repo",
-    "agents_sequence": ["requirements", "architecture"],
     "metrics_db": ":memory:",
-    "board": {"columns": ["Backlog", "In Progress", "Done"], "labels": {}},
-    "gitflow": {"branch_base": "develop", "prefixes": {"feature": "feature/"}},
+    "gitflow": {"branch_base": "develop"},
 }
 
 _STATE_M1 = {"current_milestone": "m1"}

@@ -12,6 +12,7 @@ from .client import (
     get_milestones,
     get_issues,
 )
+from .sync import sync_boards
 
 __all__ = [
     "get_next_issue",
@@ -26,4 +27,5 @@ __all__ = [
     "get_issues_with_label",
     "get_milestones",
     "get_issues",
+    "sync_boards",
 ]

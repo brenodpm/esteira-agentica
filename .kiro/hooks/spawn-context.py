@@ -6,7 +6,6 @@ Lê state.json e config/project.json do projeto atual e imprime um bloco de
 contexto estruturado que o Kiro injeta no início da conversa do agente.
 """
 import json
-import sys
 from pathlib import Path
 
 
@@ -20,22 +19,12 @@ def main() -> None:
     config = json.loads(config_path.read_text()) if config_path.exists() else {}
 
     repo = config.get("repo", "não configurado")
-    sequence = config.get("agents_sequence", [])
     current_step = state.get("current_step")
+    current_column = state.get("current_column")
     current_feature = state.get("current_feature")
     issue_number = state.get("issue_number")
     status = state.get("status", "idle")
     rework = state.get("rework", False)
-
-    # Posição na sequência
-    if current_step and sequence:
-        try:
-            pos = sequence.index(current_step) + 1
-            step_info = f"{pos}/{len(sequence)}"
-        except ValueError:
-            step_info = "?"
-    else:
-        step_info = "início"
 
     lines = [
         "## Contexto da esteira",
@@ -47,12 +36,12 @@ def main() -> None:
         lines.append(f"- Feature em andamento: {current_feature}")
     if issue_number:
         lines.append(f"- Issue: #{issue_number}")
+    if current_column:
+        lines.append(f"- Coluna atual: {current_column}")
     if current_step:
-        lines.append(f"- Etapa atual: {current_step} ({step_info})")
+        lines.append(f"- Agente atual: {current_step}")
     if rework:
         lines.append("- ⚠️ REWORK: artefato anterior foi rejeitado — revisar antes de produzir nova versão")
-    if sequence:
-        lines.append(f"- Sequência completa: {' → '.join(sequence)}")
 
     print("\n".join(lines))
 

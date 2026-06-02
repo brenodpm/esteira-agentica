@@ -1,15 +1,16 @@
 from unittest.mock import patch, call
 import pytest
 
-from src.orchestrator.blocker import create_blocker, unblock_dependents, detect_deadlock
+from src.orchestrator.blocker import (
+    create_blocker, unblock_dependents, detect_deadlock,
+    parse_sub_tasks, parse_parent, all_children_done,
+)
 from src.orchestrator.runner import run_once
 
 _CONFIG = {
     "repo": "org/repo",
-    "agents_sequence": ["requirements", "architecture"],
     "metrics_db": ":memory:",
-    "board": {"columns": ["Backlog", "In Progress", "Done"], "labels": {}},
-    "gitflow": {"branch_base": "develop", "prefixes": {"feature": "feature/"}},
+    "gitflow": {"branch_base": "develop"},
 }
 
 _IDLE_STATE = {"status": "idle", "current_step": None, "current_feature": None, "issue_number": None, "rework": False}
@@ -127,3 +128,133 @@ def test_run_once_deadlock_creates_issue():
     _, kwargs = mock_create.call_args
     assert "needs-human" in kwargs.get("labels", [])
     mock_agents.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# parse_sub_tasks
+# ---------------------------------------------------------------------------
+
+_BODY_PARENT = """
+## Sub-tasks
+- [ ] #10
+- [x] #11
+- [ ] #12
+"""
+
+_BODY_CHILD = "Parent: #5\n\nDescrição da tarefa."
+
+
+# CT-087 — parse_sub_tasks extrai números do bloco ## Sub-tasks
+def test_parse_sub_tasks_basic():
+    assert parse_sub_tasks(_BODY_PARENT) == [10, 11, 12]
+
+
+# CT-088 — parse_sub_tasks retorna lista vazia quando não há seção Sub-tasks
+def test_parse_sub_tasks_empty():
+    assert parse_sub_tasks("Sem sub-tasks aqui") == []
+
+
+# CT-089 — parse_sub_tasks retorna lista vazia para body None
+def test_parse_sub_tasks_none():
+    assert parse_sub_tasks(None) == []
+
+
+# CT-090 — parse_parent extrai número do pai
+def test_parse_parent_basic():
+    assert parse_parent(_BODY_CHILD) == 5
+
+
+# CT-091 — parse_parent retorna None quando não há Parent
+def test_parse_parent_none():
+    assert parse_parent("Sem parent aqui") is None
+
+
+# CT-092 — parse_parent retorna None para body None
+def test_parse_parent_body_none():
+    assert parse_parent(None) is None
+
+
+# ---------------------------------------------------------------------------
+# all_children_done
+# ---------------------------------------------------------------------------
+
+# CT-093 — all_children_done retorna True quando não há sub-tasks
+def test_all_children_done_no_children():
+    with patch("src.orchestrator.blocker.github.get_issue",
+               return_value={"body": "Sem sub-tasks", "state": "open"}):
+        assert all_children_done(_CONFIG, 1) is True
+
+
+# CT-094 — all_children_done retorna True quando todas as filhas estão fechadas
+def test_all_children_done_all_closed():
+    parent = {"body": _BODY_PARENT, "state": "open"}
+    child = {"state": "closed"}
+    with patch("src.orchestrator.blocker.github.get_issue", side_effect=[parent, child, child, child]):
+        assert all_children_done(_CONFIG, 1) is True
+
+
+# CT-095 — all_children_done retorna False quando há filha aberta
+def test_all_children_done_has_open():
+    parent = {"body": _BODY_PARENT, "state": "open"}
+    closed = {"state": "closed"}
+    open_child = {"state": "open"}
+    with patch("src.orchestrator.blocker.github.get_issue",
+               side_effect=[parent, closed, open_child]):
+        assert all_children_done(_CONFIG, 1) is False
+
+
+# ---------------------------------------------------------------------------
+# wait_children no runner
+# ---------------------------------------------------------------------------
+
+_WAIT_CONFIG = {
+    "repo": "org/repo",
+    "metrics_db": ":memory:",
+    "gitflow": {"branch_base": "develop"},
+    "boards": {
+        "epic": {
+            "todo": "backlog",
+            "priority": 0,
+            "columns": {
+                "backlog": {"name": "Backlog", "change": {"advance": "aguardando"}},
+                "aguardando": {
+                    "name": "Aguardando Tasks",
+                    "wait_children": True,
+                    "change": {"advance": "concluido"},
+                },
+                "concluido": {"name": "Concluído"},
+            },
+        }
+    },
+}
+
+_WAIT_STATE = {
+    "status": "idle",
+    "current_column": "aguardando",
+    "current_step": None,
+    "current_feature": "epic",
+    "issue_number": 1,
+    "rework": False,
+}
+
+
+# CT-096 — wait_children: avança quando não há filhas pendentes
+def test_wait_children_advances_when_no_children():
+    with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
+         patch("src.orchestrator.runner.blocker.all_children_done", return_value=True), \
+         patch("src.orchestrator.runner.github.move_card") as mock_move, \
+         patch("src.orchestrator.runner.blocker.unblock_dependents"), \
+         patch("src.orchestrator.runner.state_mod.save") as mock_save:
+        run_once(_WAIT_CONFIG)
+    mock_move.assert_called()
+
+
+# CT-097 — wait_children: não avança enquanto há filhas abertas
+def test_wait_children_waits_when_pending():
+    with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_WAIT_STATE)), \
+         patch("src.orchestrator.runner.blocker.all_children_done", return_value=False), \
+         patch("src.orchestrator.runner.agents_run") as mock_agents, \
+         patch("src.orchestrator.runner.state_mod.save") as mock_save:
+        run_once(_WAIT_CONFIG)
+    mock_agents.assert_not_called()
+    mock_save.assert_not_called()

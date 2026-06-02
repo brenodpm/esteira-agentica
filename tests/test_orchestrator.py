@@ -8,14 +8,33 @@ from src.orchestrator.runner import run_once, run_loop
 
 _CONFIG = {
     "repo": "org/repo",
-    "agents_sequence": ["requirements", "architecture"],
     "metrics_db": ":memory:",
-    "board": {"columns": ["Backlog", "In Progress", "Done"], "labels": {}},
-    "gitflow": {"branch_base": "develop", "prefixes": {"feature": "feature/"}},
+    "gitflow": {"branch_base": "develop"},
+    "boards": {
+        "task": {
+            "todo": "backlog",
+            "priority": 0,
+            "columns": {
+                "backlog": {
+                    "name": "Backlog",
+                    "change": {"advance": "dev"},
+                },
+                "dev": {
+                    "name": "Dev",
+                    "agent": "requirements",
+                    "acao": "Implementar",
+                    "change": {"advance": "concluido"},
+                },
+                "concluido": {"name": "Concluído"},
+            },
+        }
+    },
 }
 
-_IDLE_STATE = {"current_feature": None, "current_step": None, "status": "idle", "issue_number": None}
-_ISSUE_FULL = {"number": 1, "title": "feat: nova feature", "body": "Descrição da feature"}
+_IDLE_STATE = {"current_feature": None, "current_step": None, "current_column": None,
+               "status": "idle", "issue_number": None, "rework": False}
+_ISSUE_FULL = {"number": 1, "title": "feat: nova feature", "body": "Descrição da feature",
+               "labels": [{"name": "dev"}]}
 _AGENT_RESULT = {"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}
 
 
@@ -92,9 +111,9 @@ def test_run_once_creates_branch_on_new_feature():
 
 # CT-055 — run_once não cria branch quando current_step já está definido
 def test_run_once_no_branch_on_resume():
-    resume_state = {"current_feature": "feat", "current_step": "requirements", "status": "running", "issue_number": 1}
+    resume_state = {"current_feature": "feat", "current_column": "dev",
+                    "current_step": "requirements", "status": "running", "issue_number": 1, "rework": False}
     with patch("src.orchestrator.runner.state_mod.load", return_value=resume_state), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_FULL), \
          patch("src.orchestrator.runner.git.create_branch") as mock_branch, \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
@@ -108,7 +127,8 @@ def test_run_once_no_branch_on_resume():
 
 # CT-056 — run_loop encerra sem stack trace ao receber KeyboardInterrupt
 def test_run_loop_keyboard_interrupt():
-    with patch("src.orchestrator.runner.run_once", side_effect=KeyboardInterrupt), \
+    with patch("src.orchestrator.runner.sync_boards"), \
+         patch("src.orchestrator.runner.run_once", side_effect=KeyboardInterrupt), \
          patch("src.orchestrator.runner.time.sleep"):
         run_loop(_CONFIG, poll_interval_s=0)  # must not raise
 

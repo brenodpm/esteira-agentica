@@ -1,6 +1,6 @@
-Status: open
+Status: resolved
 Owner: architecture-agent
-Last updated: 2026-05-27
+Last updated: 2026-05-28
 
 ## Inputs
 - docs/agents/context.md
@@ -45,3 +45,9 @@ architecture-agent
 ## Bloqueia etapa?
 
 Não bloqueia a v1 em execução manual. Bloqueia a implementação de validação automática de artefatos no orquestrador (pós task07).
+
+## Resolução
+- Criado `docs/02-architecture/artifact-map.md` com mapa completo de inputs/outputs por agente
+- Definidos paths concretos, campos obrigatórios e convenções de nomenclatura
+- Adicionadas regras de validação para o orquestrador (pré/pós-condições, gate de aprovação)
+- Data: 2026-05-28

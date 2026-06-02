@@ -7,14 +7,38 @@ from src.orchestrator import state as state_mod
 
 _CONFIG = {
     "repo": "org/repo",
-    "agents_sequence": ["requirements", "architecture"],
     "metrics_db": ":memory:",
-    "board": {"columns": ["Backlog", "In Progress", "Done"], "labels": {}},
-    "gitflow": {"branch_base": "develop", "prefixes": {"feature": "feature/"}},
+    "gitflow": {"branch_base": "develop"},
+    "boards": {
+        "task": {
+            "todo": "backlog",
+            "priority": 0,
+            "columns": {
+                "backlog": {
+                    "name": "Backlog",
+                    "change": {"advance": "dev", "cancelar": "cancelado"},
+                },
+                "dev": {
+                    "name": "Dev",
+                    "agent": "requirements",
+                    "acao": "Implementar",
+                    "change": {"advance": "review"},
+                },
+                "review": {
+                    "name": "Review",
+                    "agent": "architecture",
+                    "change": {"advance": "concluido"},
+                },
+                "concluido": {"name": "Concluído"},
+                "cancelado": {"name": "Cancelado"},
+            },
+        }
+    },
 }
 
 _AWAITING = {
     "status": "awaiting_approval",
+    "current_column": "dev",
     "current_step": "requirements",
     "current_feature": "feat",
     "issue_number": 1,
@@ -23,6 +47,7 @@ _AWAITING = {
 
 _IDLE_NEW = {
     "status": "idle",
+    "current_column": None,
     "current_step": None,
     "current_feature": None,
     "issue_number": 1,
@@ -30,7 +55,7 @@ _IDLE_NEW = {
 }
 
 _AGENT_RESULT = {"output": "artefato gerado", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}
-_ISSUE = {"number": 1, "title": "feat", "body": ""}
+_ISSUE = {"number": 1, "title": "feat", "body": "", "labels": [{"name": "dev"}]}
 
 
 # CT-058 — pending: nenhuma ação, estado inalterado
@@ -44,7 +69,7 @@ def test_pending_no_action():
     mock_agents.assert_not_called()
 
 
-# CT-059 — approved: current_step avança, status volta a "idle"
+# CT-059 — approved: avança para próxima coluna com agente, status volta a "idle"
 def test_approved_advances_step():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING)), \
          patch("src.orchestrator.runner.github.get_approval_status", return_value="approved"), \
@@ -53,6 +78,7 @@ def test_approved_advances_step():
         run_once(_CONFIG)
     saved = mock_save.call_args[0][0]
     assert saved["status"] == "idle"
+    assert saved["current_column"] == "review"
     assert saved["current_step"] == "architecture"
     mock_remove.assert_called_once_with(_CONFIG, 1, "approved")
 
@@ -72,9 +98,9 @@ def test_rejected_sets_rework():
 
 # CT-061 — re-execução com rework=True chama metrics.record com rework=True
 def test_rework_metrics_record():
-    rework_state = {**_IDLE_NEW, "current_step": "requirements", "current_feature": "feat", "rework": True}
+    rework_state = {**_IDLE_NEW, "current_column": "dev", "current_step": "requirements",
+                    "current_feature": "feat", "rework": True}
     with patch("src.orchestrator.runner.state_mod.load", return_value=rework_state), \
-         patch("src.orchestrator.runner.github.get_next_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE), \
          patch("src.orchestrator.runner.agents_run", return_value=_AGENT_RESULT), \
          patch("src.orchestrator.runner.metrics_record") as mock_metrics, \
@@ -121,7 +147,8 @@ def test_state_awaiting_after_agent():
 
 # CT-064 — estado "awaiting_approval" persiste após reinicialização
 def test_awaiting_approval_persists(tmp_path):
-    data = {"status": "awaiting_approval", "current_step": "requirements", "issue_number": 1, "rework": False}
+    data = {"status": "awaiting_approval", "current_column": "dev", "current_step": "requirements",
+            "issue_number": 1, "rework": False}
     p = tmp_path / "state.json"
     p.write_text(json.dumps(data))
     result = state_mod.load(p)

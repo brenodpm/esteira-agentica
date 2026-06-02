@@ -2,7 +2,7 @@ import subprocess
 from unittest.mock import patch, MagicMock
 import pytest
 
-from src.agents import run, AGENT_ROLES
+from src.agents import run
 
 
 def _mock_result(stdout="artefato gerado", returncode=0):
@@ -51,13 +51,7 @@ def test_run_raises_runtime_error_on_nonzero():
     assert "falha grave" in str(exc_info.value)
 
 
-# CT-047 — AGENT_ROLES contém todos os papéis válidos
-def test_agent_roles():
-    assert AGENT_ROLES == ["product", "requirements", "architecture", "tech-lead", "engineering", "quality"]
-
-
-# CT-048 — run e AGENT_ROLES acessíveis via src.agents
+# CT-048 — run acessível via src.agents
 def test_public_interface():
-    from src.agents import run, AGENT_ROLES
+    from src.agents import run
     assert callable(run)
-    assert isinstance(AGENT_ROLES, list)

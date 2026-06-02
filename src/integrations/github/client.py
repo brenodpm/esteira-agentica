@@ -49,10 +49,61 @@ def remove_label(config: dict, issue_number: int, label: str) -> None:
     _gh("issue", "edit", str(issue_number), "--repo", repo, "--remove-label", label)
 
 
-def move_card(config: dict, issue_number: int, column: str) -> None:
+def _get_project_number(config: dict) -> str | None:
+    """Retorna o número do primeiro projeto do owner."""
+    owner = config["repo"].split("/")[0]
+    try:
+        out = _gh("project", "list", "--owner", owner, "--format", "json",
+                  "--jq", ".projects[0].number")
+        return out.strip() or None
+    except RuntimeError:
+        return None
+
+
+def move_card(config: dict, issue_number: int, column_name: str) -> None:
+    """Move issue para coluna do board pelo nome da coluna definido em esteira.yml."""
+    owner = config["repo"].split("/")[0]
+    project_number = _get_project_number(config)
+    if not project_number:
+        return
+
     repo = config["repo"]
-    _gh("project", "item-edit", "--repo", repo, "--field-value", column,
-        "--id", str(issue_number))
+    issue_url = f"https://github.com/{repo}/issues/{issue_number}"
+
+    # Obtém o item ID da issue no projeto
+    try:
+        item_id = _gh("project", "item-list", project_number,
+                      "--owner", owner, "--format", "json",
+                      "--jq", f'.items[] | select(.content.url=="{issue_url}") | .id').strip()
+        if not item_id:
+            # Adiciona ao projeto se ainda não estiver
+            _gh("project", "item-add", project_number, "--owner", owner, "--url", issue_url)
+            item_id = _gh("project", "item-list", project_number,
+                          "--owner", owner, "--format", "json",
+                          "--jq", f'.items[] | select(.content.url=="{issue_url}") | .id').strip()
+    except RuntimeError:
+        return
+
+    if not item_id:
+        return
+
+    # Obtém o field ID do campo Status
+    try:
+        field_info = _gh("project", "field-list", project_number,
+                         "--owner", owner, "--format", "json",
+                         "--jq", '.fields[] | select(.name=="Status") | {id: .id, options: .options}')
+        if not field_info.strip():
+            return
+        field = json.loads(field_info)
+        field_id = field["id"]
+        option = next((o for o in field.get("options", []) if o["name"] == column_name), None)
+        if not option:
+            return
+        _gh("project", "item-edit", "--id", item_id,
+            "--field-id", field_id, "--project-id", project_number,
+            "--single-select-option-id", option["id"])
+    except (RuntimeError, StopIteration, json.JSONDecodeError, KeyError):
+        return
 
 
 def open_pr(config: dict, title: str, body: str, head: str, base: str) -> dict:
