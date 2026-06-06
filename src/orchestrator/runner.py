@@ -174,7 +174,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
 
             if next_col_id and (next_has_agent or next_is_wait):
                 current_state["current_column"] = next_col_id
-                current_state["current_step"] = None
+                current_state["current_step"] = next_has_agent or None
                 current_state["status"] = "idle"
                 current_state["rework"] = False
             elif next_col_id and not next_is_terminal:
@@ -226,17 +226,16 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             current_state["current_column"] = col_id
             logs.log_info(issue["number"], None, f"board detectado: '{board_key}' → coluna '{col_id}'")
             logs.log_issue_start(issue["number"], issue["title"])
-        elif current_state.get("current_step") is None and current_state.get("issue_number"):
-            # Retomando issue sem step ativo — re-detecta board/coluna pelas labels atuais
+        elif current_state.get("current_board") is None and current_state.get("issue_number"):
+            # Primeira vez retomando issue sem board detectado — detecta agora
             issue = github.get_issue(config, current_state["issue_number"])
             issue_labels = {l["name"] for l in issue.get("labels", [])}
             board_key, col_id = _detect_board(config, issue_labels)
-            if board_key != current_state.get("current_board") or col_id != current_state.get("current_column"):
-                logs.log_info(current_state["issue_number"], None,
-                              f"board/coluna re-detectados: '{current_state.get('current_board')}/{current_state.get('current_column')}' → '{board_key}/{col_id}'")
-                current_state["current_board"] = board_key
-                current_state["current_column"] = col_id
-                state_mod.save(current_state)
+            logs.log_info(current_state["issue_number"], None,
+                          f"board detectado (retomada): '{board_key}' → coluna '{col_id}'")
+            current_state["current_board"] = board_key
+            current_state["current_column"] = col_id
+            state_mod.save(current_state)
 
     current_col = current_state.get("current_column")
     current_board = current_state.get("current_board")
