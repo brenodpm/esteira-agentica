@@ -148,6 +148,26 @@ def issue_exists(config: dict, issue_number: int) -> bool:
         return False
 
 
+def get_card_column(config: dict, issue_number: int) -> str | None:
+    """Retorna o nome da coluna (Status) onde o card da issue está no project board, ou None."""
+    owner = config["repo"].split("/")[0]
+    repo = config["repo"]
+    issue_url = f"https://github.com/{repo}/issues/{issue_number}"
+    projects = _get_projects(owner)
+    for project in projects:
+        try:
+            status = _gh(
+                "project", "item-list", str(project["number"]),
+                "--owner", owner, "--format", "json",
+                "--jq", f'.items[] | select(.content.url=="{issue_url}") | .status',
+            ).strip()
+            if status:
+                return status
+        except RuntimeError:
+            continue
+    return None
+
+
 def get_approval_status(config: dict, issue_number: int) -> str:
     issue = get_issue(config, issue_number)
     label_names = {l["name"] for l in issue.get("labels", [])}

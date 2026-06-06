@@ -100,27 +100,40 @@ def _is_todo(config: dict, column_id: str, board_key: str | None = None) -> bool
     return False
 
 
-def _detect_board(config: dict, issue_labels: set[str]) -> tuple[str, str] | tuple[None, None]:
+def _detect_board(config: dict, issue_labels: set[str], issue_number: int | None = None) -> tuple[str, str] | tuple[None, None]:
     """Retorna (board_key, col_id) para a issue.
 
     Prioridade:
-    1. Label igual ao id de uma coluna específica (ex: 'correcao')
-    2. Label igual ao board_key (ex: 'bug') → todo desse board
-    3. Fallback: todo do board de maior prioridade
+    1. Status real do card no project board (via gh project item-list)
+    2. Label igual ao id de uma coluna específica (ex: 'correcao')
+    3. Label igual ao board_key (ex: 'bug') → todo desse board
+    4. Fallback: todo do board de maior prioridade
     """
-    # 1. label bate com col_id em algum board
+    # 1. Consulta o status real do card no project board
+    if issue_number is not None:
+        try:
+            col_name = github.get_card_column(config, issue_number)
+            if col_name:
+                for bk, board in _boards(config).items():
+                    for col_id, col_cfg in board.get("columns", {}).items():
+                        if col_cfg.get("name", "").lower() == col_name.lower():
+                            return bk, col_id
+        except Exception:
+            pass  # fallback para labels se a consulta falhar
+
+    # 2. label bate com col_id em algum board
     for bk, board in _boards(config).items():
         for col_id in board.get("columns", {}):
             if col_id in issue_labels:
                 return bk, col_id
 
-    # 2. label bate com board key
+    # 3. label bate com board key
     for bk, board in _boards(config).items():
         if bk in issue_labels or board.get("name", "").lower() in issue_labels:
             todo = board.get("todo")
             return bk, todo
 
-    # 3. fallback: board de maior prioridade
+    # 4. fallback: board de maior prioridade
     best_bk, best_board = max(_boards(config).items(), key=lambda kv: kv[1].get("priority", 0))
     return best_bk, best_board.get("todo")
 
@@ -221,16 +234,16 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             current_state["current_feature"] = issue["title"]
 
             issue_labels = {l["name"] for l in issue.get("labels", [])}
-            board_key, col_id = _detect_board(config, issue_labels)
+            board_key, col_id = _detect_board(config, issue_labels, issue["number"])
             current_state["current_board"] = board_key
             current_state["current_column"] = col_id
             logs.log_info(issue["number"], None, f"board detectado: '{board_key}' → coluna '{col_id}'")
             logs.log_issue_start(issue["number"], issue["title"])
         elif current_state.get("current_step") is None and current_state.get("issue_number"):
-            # Retomando issue sem step ativo — re-detecta board/coluna pelas labels atuais
+            # Retomando issue sem step ativo — re-detecta board/coluna via project board
             issue = github.get_issue(config, current_state["issue_number"])
             issue_labels = {l["name"] for l in issue.get("labels", [])}
-            board_key, col_id = _detect_board(config, issue_labels)
+            board_key, col_id = _detect_board(config, issue_labels, current_state["issue_number"])
             if board_key != current_state.get("current_board") or col_id != current_state.get("current_column"):
                 logs.log_info(current_state["issue_number"], None,
                               f"board/coluna re-detectados: '{current_state.get('current_board')}/{current_state.get('current_column')}' → '{board_key}/{col_id}'")
