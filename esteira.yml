@@ -46,7 +46,7 @@ boards:
     todo: backlog
     priority: 4
     flow: doc
-    
+    parallel: false
     columns:
       backlog:
         name: Backlog
