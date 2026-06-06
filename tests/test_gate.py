@@ -81,7 +81,7 @@ def test_approved_advances_step():
     saved = mock_save.call_args[0][0]
     assert saved["status"] == "idle"
     assert saved["current_column"] == "review"
-    assert saved["current_step"] == "architecture"
+    assert saved["current_step"] is None  # agente da próxima coluna ainda não executou
     mock_remove.assert_called_once_with(_CONFIG, 1, "approved")
 
 
