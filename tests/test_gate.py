@@ -266,6 +266,10 @@ def test_agent_moves_card_to_human_gate():
          patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
          patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_GATE), \
          patch("src.orchestrator.runner.git.create_branch"), \
+         patch("src.orchestrator.runner.git.current_branch", return_value="doc/feat"), \
+         patch("src.orchestrator.runner.git.commit", return_value=True), \
+         patch("src.orchestrator.runner.git.push"), \
+         patch("src.orchestrator.runner.github.open_pr", return_value={"url": "http://pr"}), \
          patch("src.orchestrator.runner.agents_run", return_value={"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}), \
          patch("src.orchestrator.runner.metrics_record"), \
          patch("src.orchestrator.runner.github.post_comment"), \
