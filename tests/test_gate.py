@@ -225,6 +225,7 @@ def test_approved_moves_to_human_gate():
 
 
 # CT-066 — aprovação no gate humano → avança para coluna com agente, status=idle
+# current_step permanece None porque o agente ainda não executou neste ciclo
 def test_approved_from_human_gate_advances():
     with patch("src.orchestrator.runner.state_mod.load", return_value=dict(_AWAITING_APROVACAO)), \
          patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
@@ -236,7 +237,47 @@ def test_approved_from_human_gate_advances():
     saved = mock_save.call_args[0][0]
     assert saved["status"] == "idle"
     assert saved["current_column"] == "criacao"
-    assert saved["current_step"] == "product"
+    assert saved["current_step"] is None  # agente ainda não executou; rodará no próximo ciclo
+
+
+_IDLE_ANALISE = {
+    "status": "idle",
+    "current_column": "analise",
+    "current_step": "product",  # retomada após execução anterior
+    "current_feature": "feat",
+    "issue_number": 1,
+    "rework": False,
+}
+
+_ISSUE_GATE = {"number": 1, "title": "feat", "body": "", "labels": [{"name": "analise"}]}
+
+
+# CT-067 — agente conclui em coluna cujo advance é gate humano (sem agente): move card para o gate
+def test_agent_moves_card_to_human_gate():
+    state = {
+        "status": "idle",
+        "current_column": "analise",
+        "current_step": None,
+        "current_feature": "feat",
+        "issue_number": 1,
+        "rework": False,
+    }
+    with patch("src.orchestrator.runner.state_mod.load", return_value=state), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_GATE), \
+         patch("src.orchestrator.runner.git.create_branch"), \
+         patch("src.orchestrator.runner.git.current_branch", return_value="doc/feat"), \
+         patch("src.orchestrator.runner.git.commit", return_value=True), \
+         patch("src.orchestrator.runner.git.push"), \
+         patch("src.orchestrator.runner.github.open_pr", return_value={"url": "http://pr"}), \
+         patch("src.orchestrator.runner.agents_run", return_value={"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}), \
+         patch("src.orchestrator.runner.metrics_record"), \
+         patch("src.orchestrator.runner.github.post_comment"), \
+         patch("src.orchestrator.runner.github.move_card") as mock_move, \
+         patch("src.orchestrator.runner.state_mod.save"):
+        run_once(_CONFIG_GATE)
+    # card deve ir para "Aprovação" (gate humano), não permanecer em "Análise"
+    mock_move.assert_called_once_with(_CONFIG_GATE, 1, "Aprovação", None)
 
 
 # CT-064 — estado "awaiting_approval" persiste após reinicialização
