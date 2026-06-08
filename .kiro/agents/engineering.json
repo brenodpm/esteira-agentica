@@ -18,11 +18,6 @@
     "glob",
     "code"
   ],
-  "contextFiles": [
-    "docs/agents/context.md",
-    "docs/agents/engineering_agent.md",
-    "docs/02-architecture/artifact-map.md"
-  ],
   "keyboardShortcut": "ctrl+shift+5",
   "welcomeMessage": "Engineering Agent. Qual tarefa vamos implementar?",
   "hooks": {

@@ -16,10 +16,6 @@
     "grep",
     "glob"
   ],
-  "contextFiles": [
-    "logs/esteira.jsonl",
-    "docs/agents/context.md"
-  ],
   "welcomeMessage": "Optimizer Agent. Vou analisar os logs e métricas da sprint para identificar melhorias.",
   "hooks": {
     "agentSpawn": [

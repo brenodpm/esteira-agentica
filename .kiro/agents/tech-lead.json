@@ -14,11 +14,6 @@
     "grep",
     "glob"
   ],
-  "contextFiles": [
-    "docs/agents/context.md",
-    "docs/agents/tech_lead_agent.md",
-    "docs/02-architecture/artifact-map.md"
-  ],
   "keyboardShortcut": "ctrl+shift+4",
   "welcomeMessage": "Tech Lead Agent. Qual arquitetura ou épico vamos decompor em tarefas?",
   "hooks": {

@@ -14,10 +14,6 @@
     "grep",
     "glob"
   ],
-  "contextFiles": [
-    "docs/agents/context.md",
-    "docs/agents/requirements_agent.md"
-  ],
   "keyboardShortcut": "ctrl+shift+2",
   "welcomeMessage": "Requirements Agent. Qual épico ou funcionalidade vamos detalhar?",
   "hooks": {

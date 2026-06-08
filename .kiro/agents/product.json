@@ -14,10 +14,6 @@
     "grep",
     "glob"
   ],
-  "contextFiles": [
-    "docs/agents/context.md",
-    "docs/agents/product_agent.md"
-  ],
   "keyboardShortcut": "ctrl+shift+1",
   "welcomeMessage": "Product Agent. Qual é a demanda?",
   "hooks": {

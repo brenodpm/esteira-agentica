@@ -16,11 +16,6 @@
     "grep",
     "glob"
   ],
-  "contextFiles": [
-    "docs/agents/context.md",
-    "docs/agents/quality_operations_exec_agent.md",
-    "docs/02-architecture/artifact-map.md"
-  ],
   "keyboardShortcut": "ctrl+shift+6",
   "welcomeMessage": "Quality Agent. Qual feature ou tarefa vamos testar?",
   "hooks": {
