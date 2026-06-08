@@ -367,11 +367,22 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             state_mod.save(current_state)
             return
 
-    comment = f"✅ `{role}` concluído → `{col_name}` aguardando aprovação{tokens_info}"
+    # move card para a próxima coluna (gate humano) se existir, senão mantém na atual
+    next_col_id = _advance(config, current_col, current_board)
+    next_col_cfg = _find_column(config, next_col_id, current_board) if next_col_id else None
+    next_has_agent = next_col_cfg.get("agent") if next_col_cfg else False
+    if next_col_id and not next_has_agent:
+        move_target_name = _column_name(config, next_col_id, current_board)
+        move_target_board = _board_name_for_column(config, next_col_id, current_board)
+    else:
+        move_target_name = col_name
+        move_target_board = _board_name_for_column(config, current_col, current_board)
+
+    comment = f"✅ `{role}` concluído → `{move_target_name}` aguardando aprovação{tokens_info}"
     if pr_url:
         comment += f"\nPR: {pr_url}"
     github.post_comment(config, current_state["issue_number"], body=comment)
-    github.move_card(config, current_state["issue_number"], col_name, _board_name_for_column(config, current_col, current_board))
+    github.move_card(config, current_state["issue_number"], move_target_name, move_target_board)
 
     current_state["current_step"] = role
     current_state["current_column"] = current_col
