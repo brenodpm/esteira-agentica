@@ -175,7 +175,7 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
                 try:
                     branch = git.current_branch()
                     _git_merge_pr(config, branch)
-                    git.delete_branch(branch)
+                    git.delete_branch(branch, config)
                 except RuntimeError as e:
                     logs.log_error(current_state["issue_number"], None, f"merge/delete branch falhou: {e}")
 
@@ -303,17 +303,35 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     if not role:
         return
 
+    issue = github.get_issue(config, current_state["issue_number"])
+
     # Cria branch na primeira execução usando create do flow do board
     if current_state.get("current_step") is None:
-        flow = _flow_config(config, current_col, current_board)
         board = _find_board_for_column(config, current_col, current_board)
         flow_key = board.get("flow", "feature") if board else "feature"
         try:
-            git.create_branch(config, current_state["current_feature"], flow_key=flow_key)
-        except RuntimeError:
-            pass
+            git.create_branch(config, current_state["current_feature"], flow_key=flow_key, issue=issue)
+        except RuntimeError as e:
+            if "Branch dinâmica não resolvida" in str(e):
+                flow_cfg = config.get("git", {}).get("flow", {}).get(flow_key, {})
+                ref = flow_cfg.get("create") or flow_cfg.get("merge") or ""
+                github.post_comment(config, current_state["issue_number"], (
+                    f"⚠️ **Branch dinâmica não resolvida**\n\n"
+                    f"Esta issue usa o flow `{flow_key}` que referencia o prefixo `{ref}`, "
+                    f"mas não foi possível identificar a branch exata.\n\n"
+                    f"**Como resolver:** adicione uma label no formato:\n"
+                    f"```\nbranch:<nome-completo-da-branch>\n```\n"
+                    f"Exemplo: `branch:{ref}/v1.0`\n\n"
+                    f"Ou inclua no body da issue:\n"
+                    f"```html\n<!-- branch: {ref}/v1.0 -->\n```\n\n"
+                    f"Após adicionar, remova a label `blocked` para retomar."
+                ))
+                github.add_label(config, current_state["issue_number"], "blocked")
+                logs.log_error(current_state["issue_number"], None, str(e))
+                _reset_state(current_state)
+                state_mod.save(current_state)
+                return
 
-    issue = github.get_issue(config, current_state["issue_number"])
     acao = _acao_for_column(config, current_col, current_board)
     prompt = agents_build_prompt(
         role=role, issue=issue,
@@ -356,7 +374,8 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     commit_ok = not _git_commit_flag(config, current_col, current_board)  # True se não precisa commitar
     if _git_commit_flag(config, current_col, current_board):
         branch = git.current_branch()
-        flow = _flow_config(config, current_col, current_board)
+        board = _find_board_for_column(config, current_col, current_board)
+        flow_key = board.get("flow", "feature") if board else "feature"
         try:
             committed = git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
             if not committed:
@@ -369,12 +388,13 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             commit_ok = True
             git.push(branch)
             logs.log_info(current_state["issue_number"], role, f"push concluído para branch '{branch}'")
+            merge_target = git.resolve_merge_target(config, flow_key, issue)
             pr = github.open_pr(
                 config,
                 title=f"[#{current_state['issue_number']}] {current_state.get('current_feature', '')}",
                 body=f"Gerado automaticamente após execução do agente `{role}`.\n\nFecha #{current_state['issue_number']}",
                 head=branch,
-                base=flow.get("merge", "main"),
+                base=merge_target,
             )
             pr_url = pr.get("url", "")
             logs.log_info(current_state["issue_number"], role, f"PR aberto: {pr_url}")
@@ -390,6 +410,14 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
     next_col_id = _advance(config, current_col, current_board)
     next_col_cfg = _find_column(config, next_col_id, current_board) if next_col_id else None
     next_has_agent = next_col_cfg.get("agent") if next_col_cfg else False
+
+    # Cleanup: volta para branch base e apaga branches locais
+    if config.get("git", {}).get("flow", {}).get("cleanup"):
+        try:
+            git.cleanup(config)
+        except RuntimeError:
+            pass
+
     if next_col_id and not next_has_agent:
         move_target_name = _column_name(config, next_col_id, current_board)
         move_target_board = _board_name_for_column(config, next_col_id, current_board)

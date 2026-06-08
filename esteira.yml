@@ -9,31 +9,37 @@ git:
   repo: "brenodpm/esteira-agentica"
   flow:
     base: main
+    cleanup: true  # após cada etapa, checkout para base e apaga branches locais
+
+    # create/merge: se é uma branch fixa (main, develop), faz fetch+pull antes de usar.
+    # Se aponta para um prefixo de outro flow (ex: "release"), a branch exata deve ser
+    # informada na issue via label "branch:<nome>" ou no body "<!-- branch: release/v1.0 -->".
+
     release:
       prefix: release
       description: "Branch de release do projeto"
-      create: main
-      merge: main
+      create: main       # branch fixa
+      merge: main        # branch fixa
     feature:
       prefix: feature
       description: "Branch de feature de desenvolvimento"
-      create: main
-      merge: release
+      create: main       # branch fixa
+      merge: release     # prefixo → resolver via issue
     doc:
       prefix: doc
       description: "Branch para tarefas de documentação e planejamento"
-      create: main
-      merge: release
+      create: main       # branch fixa
+      merge: release     # prefixo → resolver via issue
     hotfix:
       prefix: hotfix
       description: "Usada para correção de bugs em produção"
-      create: main
-      merge: main
+      create: main       # branch fixa
+      merge: main        # branch fixa
     bugfix:
       prefix: fix
       description: "Usada para correção de bugs em homologação"
-      create: release
-      merge: release
+      create: release    # prefixo → resolver via issue
+      merge: release     # prefixo → resolver via issue
 
 boards:
 
