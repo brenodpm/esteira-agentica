@@ -376,6 +376,18 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
         branch = git.current_branch()
         board = _find_board_for_column(config, current_col, current_board)
         flow_key = board.get("flow", "feature") if board else "feature"
+        base_branch = git.base_branch(config)
+        if branch == base_branch:
+            logs.log_error(current_state["issue_number"], role, f"branch atual é '{base_branch}' — recriando branch de trabalho")
+            try:
+                branch = git.create_branch(config, current_state["current_feature"], flow_key=flow_key, issue=issue)
+            except RuntimeError as e:
+                logs.log_error(current_state["issue_number"], role, f"falha ao recriar branch: {e}")
+                current_state["last_error"] = f"branch era {base_branch}, falha ao recriar: {e}"
+                current_state["status"] = "idle"
+                current_state["rework"] = True
+                state_mod.save(current_state)
+                return
         try:
             committed = git.commit(config, f"[#{current_state['issue_number']}] {role}: {current_state.get('current_feature', '')}")
             if not committed:

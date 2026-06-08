@@ -290,3 +290,32 @@ def test_awaiting_approval_persists(tmp_path):
     assert result["status"] == "awaiting_approval"
     assert result["current_step"] == "requirements"
     assert result["rework"] is False
+
+
+# CT-068 — quando current_branch retorna 'main' (base), recria a branch antes de push
+def test_recreates_branch_when_on_main():
+    state = {
+        "status": "idle",
+        "current_column": "analise",
+        "current_step": None,
+        "current_feature": "feat",
+        "issue_number": 1,
+        "rework": False,
+    }
+    with patch("src.orchestrator.runner.state_mod.load", return_value=state), \
+         patch("src.orchestrator.runner.github.issue_exists", return_value=True), \
+         patch("src.orchestrator.runner.github.get_issue", return_value=_ISSUE_GATE), \
+         patch("src.orchestrator.runner.git.create_branch", return_value="doc/feat") as mock_create, \
+         patch("src.orchestrator.runner.git.current_branch", return_value="main"), \
+         patch("src.orchestrator.runner.git.base_branch", return_value="main"), \
+         patch("src.orchestrator.runner.git.commit", return_value=True), \
+         patch("src.orchestrator.runner.git.push"), \
+         patch("src.orchestrator.runner.github.open_pr", return_value={"url": "http://pr"}), \
+         patch("src.orchestrator.runner.agents_run", return_value={"output": "ok", "duration_s": 1.0, "tokens_in": None, "tokens_out": None}), \
+         patch("src.orchestrator.runner.metrics_record"), \
+         patch("src.orchestrator.runner.github.post_comment"), \
+         patch("src.orchestrator.runner.github.move_card"), \
+         patch("src.orchestrator.runner.state_mod.save"):
+        run_once(_CONFIG_GATE)
+    # create_branch deve ser chamado 2 vezes: 1 na criação normal (current_step is None) e 1 na recuperação
+    assert mock_create.call_count == 2

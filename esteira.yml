@@ -77,10 +77,10 @@ boards:
           reprovar: analise-negocio
       criacao-stories:
         name: "Criação de User Stories"
-        desc: "Agente de negócio cria as user stories da demanda"
+        desc: "Agente de negócio cria as user stories da demanda no board 'User Stories' do GitHub"
         agent: product
         git_commit: true
-        acao: "Criar user stories detalhadas com critérios de aceitação para a demanda aprovada"
+        acao: "Criar user stories detalhadas com critérios de aceitação para a demanda aprovada no board 'User Stories' do GitHub"
         change:
           advance: aguardando-stories
       aguardando-stories:
