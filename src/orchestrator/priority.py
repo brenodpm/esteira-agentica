@@ -45,19 +45,26 @@ def _all_col_ids(board: dict) -> set[str]:
     return set(board.get("columns", {}).keys())
 
 
+def _terminal_col_ids(board: dict) -> set[str]:
+    """Colunas sem 'change' — estados terminais (concluído, cancelado)."""
+    return {col_id for col_id, col in board.get("columns", {}).items() if not col.get("change")}
+
+
 def _eligible_for_board(issues: list[dict], board: dict) -> list[dict]:
-    """Issues elegíveis para um board: não bloqueadas, com label do todo, de coluna com agent,
-    ou sem nenhuma label de coluna conhecida (tratadas como todo)."""
+    """Issues elegíveis para um board: não bloqueadas, não em coluna terminal (sem 'change'),
+    com label do todo, de coluna com agent, ou sem nenhuma label de coluna conhecida (→ todo)."""
     todo = _todo_col_id(board)
     agent_cols = _board_agent_col_ids(board)
     all_cols = _all_col_ids(board)
+    terminal = _terminal_col_ids(board)
     result = []
     for i in issues:
         if _is_blocked(i):
             continue
         lbls = _labels(i)
         col_labels = lbls & all_cols
-        # tem label de coluna relevante, ou não tem nenhuma label de coluna (→ todo)
+        if col_labels & terminal:
+            continue
         if col_labels & ({todo} | agent_cols) or not col_labels:
             result.append(i)
     return result
@@ -81,7 +88,7 @@ def _pick_from(issues: list[dict], board: dict) -> dict | None:
     return None
 
 
-def select_next(config: dict, state: dict) -> dict | None:
+def select_next(config: dict, state: dict, exclude: set[int] | None = None) -> dict | None:
     """Seleciona a próxima issue a ser processada.
 
     Boards são agrupados por priority (menor = maior prioridade).
@@ -91,14 +98,16 @@ def select_next(config: dict, state: dict) -> dict | None:
     boards = config.get("boards", {})
 
     if boards:
-        return _select_from_board(config)
+        return _select_from_board(config, exclude=exclude)
     else:
         return _select_from_milestone(config, state)
 
 
-def _select_from_board(config: dict) -> dict | None:
+def _select_from_board(config: dict, exclude: set[int] | None = None) -> dict | None:
     boards = config.get("boards", {})
     all_issues = _gh_issues(config["repo"])
+    if exclude:
+        all_issues = [i for i in all_issues if i["number"] not in exclude]
 
     # Agrupa boards por priority e ordena do menor para o maior
     groups: dict[int, list[dict]] = {}

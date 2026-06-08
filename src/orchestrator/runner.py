@@ -227,14 +227,24 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
                     labels=["needs-human"],
                 )
                 return
-            issue = priority.select_next(config, current_state)
-            if issue is None:
-                return
+
+            exclude: set[int] = set()
+            issue = None
+            while True:
+                issue = priority.select_next(config, current_state, exclude=exclude)
+                if issue is None:
+                    return
+                issue_labels = {l["name"] for l in issue.get("labels", [])}
+                board_key, col_id = _detect_board(config, issue_labels, issue["number"])
+                col_cfg_sel = _find_column(config, col_id, board_key) if col_id else None
+                if col_cfg_sel and col_cfg_sel.get("change"):
+                    break
+                logs.log_info(issue["number"], None, f"board detectado: '{board_key}' → coluna '{col_id}'")
+                logs.log_info(issue["number"], None, "coluna terminal — ignorando issue")
+                exclude.add(issue["number"])
+
             current_state["issue_number"] = issue["number"]
             current_state["current_feature"] = issue["title"]
-
-            issue_labels = {l["name"] for l in issue.get("labels", [])}
-            board_key, col_id = _detect_board(config, issue_labels, issue["number"])
             current_state["current_board"] = board_key
             current_state["current_column"] = col_id
             logs.log_info(issue["number"], None, f"board detectado: '{board_key}' → coluna '{col_id}'")
@@ -244,6 +254,15 @@ def run_once(config: dict, sprint_issues: list[int] | None = None) -> None:
             issue = github.get_issue(config, current_state["issue_number"])
             issue_labels = {l["name"] for l in issue.get("labels", [])}
             board_key, col_id = _detect_board(config, issue_labels, current_state["issue_number"])
+
+            # Coluna terminal (sem 'change') — ignorar e buscar próxima issue
+            col_cfg_check = _find_column(config, col_id, board_key) if col_id else None
+            if not col_cfg_check or not col_cfg_check.get("change"):
+                logs.log_info(current_state["issue_number"], None, "coluna terminal — ignorando issue")
+                _reset_state(current_state)
+                state_mod.save(current_state)
+                return
+
             if board_key != current_state.get("current_board") or col_id != current_state.get("current_column"):
                 logs.log_info(current_state["issue_number"], None,
                               f"board/coluna re-detectados: '{current_state.get('current_board')}/{current_state.get('current_column')}' → '{board_key}/{col_id}'")
