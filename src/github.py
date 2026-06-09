@@ -168,3 +168,88 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
                     all_opts.append(col)
             if len(all_opts) > len(existing):
                 _add_status_options(status["id"], all_opts)
+
+
+# ── Ações local → GitHub ──────────────────────────────────────────────────────
+
+
+def create_issue(repo: str, title: str, body: str) -> int:
+    """Cria issue no repo. Retorna o number."""
+    out = _gh("issue", "create", "--repo", repo,
+              "--title", title, "--body", body, "--json", "number")
+    return json.loads(out)["number"]
+
+
+def close_issue(repo: str, issue_number: int) -> None:
+    """Fecha uma issue."""
+    _gh("issue", "close", str(issue_number), "--repo", repo)
+
+
+def update_issue_body(repo: str, issue_number: int, body: str) -> None:
+    """Atualiza o body de uma issue."""
+    _gh("issue", "edit", str(issue_number), "--repo", repo, "--body", body)
+
+
+def post_comment(repo: str, issue_number: int, body: str) -> None:
+    """Posta um comentário na issue."""
+    _gh("issue", "comment", str(issue_number), "--repo", repo, "--body", body)
+
+
+def move_card(config: dict, issue_number: int, board_id: str, col_name: str) -> None:
+    """Move issue para coluna no project board."""
+    owner = config["repo"].split("/")[0]
+    repo = config["repo"]
+    _, owner_type = _resolve_owner(owner)
+    projects = _list_projects(owner, owner_type)
+
+    board_name = config["boards"][board_id].get("name", board_id)
+    project = next((p for p in projects if p["title"] == board_name), None)
+    if not project:
+        raise GitHubError(f"Project '{board_name}' não encontrado")
+
+    project_number = str(project["number"])
+    project_id = project["id"]
+    issue_url = f"https://github.com/{repo}/issues/{issue_number}"
+
+    # Busca item no project
+    out = _gh("project", "item-list", project_number,
+              "--owner", owner, "--format", "json", "--limit", "200")
+    items = json.loads(out).get("items", [])
+    item_id = None
+    for item in items:
+        content = item.get("content", {})
+        if content.get("url") == issue_url:
+            item_id = item["id"]
+            break
+
+    # Se não está no project, adiciona
+    if not item_id:
+        _gh("project", "item-add", project_number, "--owner", owner, "--url", issue_url)
+        out = _gh("project", "item-list", project_number,
+                  "--owner", owner, "--format", "json", "--limit", "200")
+        items = json.loads(out).get("items", [])
+        for item in items:
+            content = item.get("content", {})
+            if content.get("url") == issue_url:
+                item_id = item["id"]
+                break
+
+    if not item_id:
+        raise GitHubError(f"Não foi possível adicionar issue #{issue_number} ao project")
+
+    # Busca campo Status e opção
+    status_field = _get_status_field(project_id)
+    if not status_field:
+        raise GitHubError("Campo Status não encontrado no project")
+
+    option = next((o for o in status_field.get("options", []) if o["name"] == col_name), None)
+    if not option:
+        raise GitHubError(f"Coluna '{col_name}' não encontrada no project")
+
+    _gql(
+        "mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!){updateProjectV2ItemFieldValue(input:{projectId:$pid,itemId:$iid,fieldId:$fid,value:{singleSelectOptionId:$oid}}){projectV2Item{id}}}",
+        pid=project_id,
+        iid=item_id,
+        fid=status_field["id"],
+        oid=option["id"],
+    )

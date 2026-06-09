@@ -1,6 +1,6 @@
 # Contexto e Decisões — Esteira Agêntica
 
-Data: 2026-06-08
+Data: 2026-06-09
 
 ## Visão Geral
 
@@ -12,8 +12,6 @@ Reescrita completa do projeto `esteira-agentica-ruim` com lógica nova.
 1. **pipe.yml** — fonte da verdade para estrutura de boards/colunas
 2. **Disco local** — reflete o pipe.yml; movimentação de issues propaga para o GitHub
 3. **GitHub** — recebe atualizações; nunca sobrescreve pipe.yml ou estrutura local
-
-O GitHub **nunca** dita a estrutura de diretórios. Sempre o contrário.
 
 ## Estrutura de Diretórios
 
@@ -66,77 +64,95 @@ O GitHub **nunca** dita a estrutura de diretórios. Sempre o contrário.
 | `b-del` | Removido no board, precisa ser removido localmente |
 | `l-mv` | Movido localmente, precisa ser movido no board |
 | `b-mv` | Movido no board, precisa ser movido localmente |
+| `l-sync` | Arquivo local modificado, precisa atualizar o board |
+| `b-sync` | Board modificado, precisa atualizar localmente |
+
+## Regras de Detecção (QUANDO/ENTÃO)
+
+### Full Sync
+QUANDO `last_sync` for do dia anterior → full sync, `last_sync` = 00:00 UTC do dia atual
+
+### Detecção de remoção
+- QUANDO issue no snapshot mas não no board → `status=b-del`, `b-time=agora`
+- QUANDO issue no snapshot mas não no diretório → `status=l-del`, `l-time=agora`
+
+### Detecção de movimentação
+- QUANDO issue no snapshot mas em coluna local diferente → `status=l-mv`, atualiza paths
+- QUANDO issue no snapshot com `status=ok` e coluna no board diferente → `status=b-mv`
+
+### Detecção de modificação
+- QUANDO mtime do slug ou write > `l-time` → `status=l-sync`, `l-time=mtime`
+- QUANDO `updatedAt` do board ≠ `b-time` → `status=b-sync`, `b-time=updatedAt`
+
+### Detecção de criação
+- QUANDO arquivo no diretório sem entrada no snapshot → `status=l-new`
+- QUANDO issue no board sem entrada no snapshot → `status=b-new`
+
+## Ações por Status
+
+### Implementadas (board → local)
+
+| Status | Ação |
+|--------|------|
+| `b-new` | Cria 3 arquivos (slug, history, write), preenche campos, status→ok |
+| `b-del` | Remove 3 arquivos locais, remove do snapshot |
+| `b-sync` | Atualiza history com comentários, atualiza body se mudou, status→ok |
+| `b-mv` | Move 3 arquivos para nova coluna, atualiza history, status→ok |
+
+### Pendências (local → GitHub) — TODO
+
+| Status | Ação |
+|--------|------|
+| `l-new` | Criar issue no GitHub, apagar arquivo original, recriar com padrão correto, status→ok |
+| `l-del` | Fechar issue no GitHub, remover do board, remover do snapshot |
+| `l-mv` | Mover card no board, atualizar column, checar write, status→ok |
+| `l-sync` | Atualizar body se principal mudou, checar write (postar comentário se conteúdo), status→ok |
+
+## Regra de Órfãos (ao mover slug)
+
+QUANDO slug for movido de diretório:
+- Se history ficou no diretório anterior → remover
+- Se write ficou no diretório anterior com conteúdo → postar como comentário e remover
+- O sync cria novos no diretório correto
 
 ## Arquivos por Issue
 
 ### Principal (`<id>-<slug>.md`)
-- Contém: `# Título\n\n<body da issue>`
+- Contém: `# Título\n\n<body>`
 - Leitura e escrita
 
 ### History (`<id>-<slug>-history.md`)
-- **Somente leitura** — gerado a partir dos comentários do GitHub
-- Formato:
-  ```
-  <author> - <data>
-  <body>
-  --------
-  ```
-- Atualizado toda vez que o arquivo principal é atualizado
+- **Somente leitura** — gerado do GitHub
+- Formato: `<author> - <data>\n<body>\n--------`
 
 ### Write (`<id>-<slug>-write.md`)
-- Criado sempre **vazio**
-- Se preenchido → conteúdo vira comentário na issue do GitHub → arquivo limpo após envio
+- Criado **vazio**
+- Se preenchido → conteúdo vira comentário na issue → arquivo limpo após envio
 
-## Naming de Arquivos
+## Naming
 
-- Formato: `<id>-<title em snake_case sem acentos e sem caracteres especiais>.md`
-- O campo `name` no snapshot remove `.` e `-` do título original
-- A função `_slugify` normaliza Unicode, remove acentos, converte para lowercase, troca não-alfanuméricos por `_`
+- Arquivo: `<id>-<title em snake_case sem acentos/especiais>.md`
+- Campo `name`: título sem `.` e sem `-`
+- `_slugify`: normaliza Unicode, remove acentos, lowercase, não-alfanuméricos→`_`
 
-## Sync de Estrutura (na inicialização)
+## Otimização de API
 
-1. Carrega `pipe.yml`
-2. Compara `pipe_mtime` do snapshot com mtime real do arquivo
-3. Se diferente: recria diretórios locais conforme pipe.yml (remove obsoletos, cria novos)
-4. Push colunas para GitHub Projects V2 (cria projetos/campos Status se necessário)
-5. Salva snapshot
+- `last_sync` salvo no snapshot — próximos ciclos usam `gh issue list --search "updated:>=date"`
+- Apenas issues modificadas são processadas
+- `fetch_board_items` ainda busca lista completa (necessário para detectar `b-del`)
+- Rate limit: 5000 pontos/hora (GraphQL), 5000 req/hora (REST), janela de 1 hora
 
-## Sync de Issues (no loop principal)
+## Tratamento de Erros
 
-1. Busca items de todos os boards via `gh project item-list`
-2. Compara com snapshot — issues novas recebem status `b-new`
-3. Para cada `b-new`: cria os 3 arquivos, busca comentários via `gh issue view`, preenche `itime` com `updatedAt`
-4. Salva snapshot
-
-## Loop Principal
-
-```python
-sync(config)  # estrutura
-while True:
-    sync_issues(config)  # issues
-    time.sleep(sleeptime)
-```
-
-## Integração GitHub
-
-- Usa `gh` CLI (não requer token manual, usa auth do gh)
-- GraphQL para operações de Projects V2 (criar projeto, campos, opções)
-- REST/CLI para issues (view, comments)
-- `_gql()` não usa `check=True` pois erros parciais são esperados (org vs user)
-
-## Pendências: Ações Local → GitHub (TODO)
-
-| Ação | Trigger | Efeito no GitHub |
-|------|---------|------------------|
-| Criar issue | Arquivo novo em coluna (status `l-new`) | Criar issue no repo + adicionar ao project board |
-| Mover issue | Arquivo movido de coluna (status `l-mv`) | Mover card para nova coluna no project |
-| Deletar issue | Arquivo removido (status `l-del`) | Fechar issue no GitHub |
-| Postar comentário | Arquivo `*-write.md` com conteúdo | Postar body como comentário na issue e limpar o arquivo |
+- `RateLimitError` — detecta "rate limit" na resposta, pula o ciclo
+- `GitHubError` — erro genérico, loga e continua
+- Loop principal com catch-all para não morrer
+- `_build_history` falha graciosamente (retorna vazio)
 
 ## Tecnologias
 
 - Python 3.14
 - PyYAML para config
-- `gh` CLI para GitHub
+- `gh` CLI para GitHub (GraphQL + REST)
 - Sem banco de dados — snapshot.json é o estado
 - Execução: `python -m src`
