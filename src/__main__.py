@@ -1,24 +1,28 @@
-import sys
-from src.config import load as load_config
-from src.orchestrator import run_loop
-from src.integrations.github import sync_boards
+import time
 
-VERSION = "0.1.0"
+from src.config import load_config
+from src.sync import sync
+from src.issues import sync_issues
+from src.github import RateLimitError, GitHubError
 
 
-def main() -> None:
-    args = sys.argv[1:]
-    config = load_config("esteira.yml")
+def main():
+    config = load_config("pipe.yml")
+    sync(config)
 
-    if args and args[0] == "sync":
-        print(f"Sincronizando boards com GitHub Projects V2...")
-        sync_boards(config)
-        print("Sincronização concluída.")
-        return
-
-    print(f"Esteira Agêntica v{VERSION} — repo: {config['repo']}")
-    run_loop(config)
+    sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
+    print(f"Loop principal iniciado (intervalo: {sleeptime}s)")
+    while True:
+        try:
+            sync_issues(config)
+        except RateLimitError:
+            print("  ⚠ Rate limit — aguardando próximo ciclo.")
+        except GitHubError as e:
+            print(f"  ⚠ Erro GitHub: {e}")
+        except Exception as e:
+            print(f"  ✖ Erro inesperado: {e}")
+        time.sleep(sleeptime)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

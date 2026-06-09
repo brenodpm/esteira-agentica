@@ -1,6 +1,2 @@
+.pipe/
 __pycache__/
-*.pyc
-metrics.db
-.env
-/logs/
-state.json
