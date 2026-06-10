@@ -35,15 +35,15 @@ Etapa: {nome da etapa}
 Tarefa: {nome da issue}
 
 Faça:
-{se criar branch: [ ] criar branch {nome da branch} a partir da {branch origem}}
-{se não criar branch: [ ] usar branch {nome da branch}}
-[ ] executar tarefa `{caminho do arquivo}`
-[ ] checar se as tarefas em `/blocked_by` foram concluidas, se não foram, anotar comentário em {endereço write} e encerrar processamento
-[ ] se houver dúvida abrir demanda, bloquear tarefa com a demanda, anotar comentário em {endereço write} e encerrar processamento
-[ ] fazer commit e push
-{se solicitar merge: [ ] criar merge request para {branch alvo}}
-[ ] Anotar um resumo curto do que foi executado em `{caminho do write}`
-[ ] fazer checkout para {branch base} e apagar todas as branchs locais ()
+{se criar branch: - [ ] criar branch {nome da branch} a partir da {branch origem}}
+{se não criar branch: - [ ] usar branch {nome da branch}}
+- [ ] executar tarefa `{caminho do arquivo}`
+- [ ] checar se as tarefas em `/blocked_by` foram concluidas, se não foram, anotar comentário em {endereço write} e encerrar processamento
+- [ ] se houver dúvida abrir demanda, bloquear tarefa com a demanda, anotar comentário em {endereço write} e encerrar processamento
+- [ ] fazer commit e push
+{se solicitar merge: - [ ] criar merge request para {branch alvo}}
+- [ ] Anotar um resumo curto do que foi executado em `{caminho do write}`
+- [ ] fazer checkout para {branch base} e apagar todas as branchs locais ()
 
 
 Após conclusão da tarefa mova o issue
