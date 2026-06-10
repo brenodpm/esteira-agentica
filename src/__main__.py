@@ -1,6 +1,7 @@
 import time
 
 from src.config import load_config
+from src.log import log
 from src.sync import sync
 from src.issues import sync_issues
 from src.github import RateLimitError, GitHubError
@@ -11,16 +12,16 @@ def main():
     sync(config)
 
     sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
-    print(f"Loop principal iniciado (intervalo: {sleeptime}s)")
+    log.info("Loop iniciado (intervalo: %ds)", sleeptime)
     while True:
         try:
             sync_issues(config)
         except RateLimitError:
-            print("  ⚠ Rate limit — aguardando próximo ciclo.")
+            log.warning("Rate limit — aguardando próximo ciclo")
         except GitHubError as e:
-            print(f"  ⚠ Erro GitHub: {e}")
+            log.error("Erro GitHub: %s", e)
         except Exception as e:
-            print(f"  ✖ Erro inesperado: {e}")
+            log.error("Erro inesperado: %s", e, exc_info=True)
         time.sleep(sleeptime)
 
 

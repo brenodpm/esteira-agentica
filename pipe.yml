@@ -64,14 +64,12 @@ boards:
         name: "Análise de Negócio"
         desc: "Agente de negócio entende a demanda e cria documentações negociais"
         agent: product
-        git_commit: true
         acao: "Entender a demanda, produzir visão de produto, problem-space e épicos"
         change:
           advance: aprovacao-negocio
       aprovacao-negocio:
         name: "Aprovação Negócio"
         desc: "Humano aprova os artefatos negociais"
-        git_merge: true
         change:
           advance: criacao-stories
           reprovar: analise-negocio
@@ -79,20 +77,17 @@ boards:
         name: "Criação de User Stories"
         desc: "Agente de negócio cria as user stories da demanda"
         agent: product
-        git_commit: true
         acao: "Criar user stories detalhadas com critérios de aceitação para a demanda aprovada"
         change:
           advance: aguardando-stories
       aguardando-stories:
         name: "Aguardando Stories"
         desc: "Aguarda a conclusão de todas as user stories vinculadas"
-        wait_children: true
         change:
           advance: homologacao
       homologacao:
         name: "Homologação"
         desc: "Humano efetua homologação"
-        git_merge: true
         change:
           advance: publicacao
           reprovar: aguardando-stories
@@ -100,7 +95,6 @@ boards:
         name: "Publicação"
         desc: "Agente DevOps publica em produção"
         agent: devops
-        git_commit: true
         acao: "Publicar em produção conforme runbook, atualizar variáveis e executar deploy"
         change:
           advance: documentacao
@@ -108,7 +102,6 @@ boards:
         name: "Documentação"
         desc: "Agente de negócio cria ou atualiza documentação pública e README"
         agent: product
-        git_commit: true
         acao: "Atualizar README e documentação pública refletindo as mudanças entregues"
         change:
           advance: otimizacao
@@ -116,7 +109,6 @@ boards:
         name: "Otimização"
         desc: "Agente especialista em IA analisa desempenho e melhora os agentes"
         agent: optimizer
-        git_commit: true
         acao: "Analisar métricas e logs da demanda, propor melhorias nos agentes para aumentar desempenho e reduzir custos"
         change:
           advance: concluido
@@ -145,7 +137,6 @@ boards:
         name: "Requisitos"
         desc: "Agente de requisitos levanta requisitos e complementa documentações"
         agent: requirements
-        git_commit: true
         acao: "Levantar requisitos funcionais e não-funcionais, complementar documentações negociais com critérios técnicos"
         change:
           advance: arquitetura
@@ -153,14 +144,12 @@ boards:
         name: "Arquitetura"
         desc: "Agente de arquitetura define a arquitetura da story"
         agent: architecture
-        git_commit: true
         acao: "Definir arquitetura técnica, ADRs e constraints para a story"
         change:
           advance: validacao-artefatos
       validacao-artefatos:
         name: "Validação de Artefatos"
         desc: "Humano valida os artefatos de requisitos e arquitetura"
-        git_merge: true
         change:
           advance: planejamento-tecnico
           reprovar: requisitos
@@ -168,21 +157,18 @@ boards:
         name: "Planejamento Técnico"
         desc: "Agente líder técnico define as tarefas de desenvolvimento"
         agent: tech-lead
-        git_commit: true
         acao: "Decompor a story em tarefas técnicas rastreáveis e criar as issues de task no board"
         change:
           advance: aguardando-tasks
       aguardando-tasks:
         name: "Aguardando Tasks"
         desc: "Aguarda a conclusão de todas as tasks vinculadas"
-        wait_children: true
         change:
           advance: change-file
       change-file:
         name: "Change File"
         desc: "Agente líder técnico cria o change file da story"
         agent: tech-lead
-        git_commit: true
         acao: "Criar change file documentando todas as alterações entregues na story"
         change:
           advance: concluido
@@ -211,7 +197,6 @@ boards:
         name: "Casos de Teste"
         desc: "Agente de qualidade escreve os casos de teste"
         agent: quality
-        git_commit: true
         acao: "Escrever casos de teste baseados nos critérios de aceitação da task"
         change:
           advance: desenvolvimento
@@ -219,7 +204,6 @@ boards:
         name: "Desenvolvimento"
         desc: "Agente de engenharia cria código e cobertura de testes (TDD)"
         agent: engineering
-        git_commit: true
         acao: "Implementar a task seguindo TDD, garantindo cobertura dos casos de teste definidos"
         change:
           advance: execucao-testes
@@ -228,7 +212,6 @@ boards:
         name: "Execução de Testes"
         desc: "Agente de qualidade executa os casos de teste"
         agent: quality
-        git_commit: true
         acao: "Executar casos de teste, registrar resultados e reportar falhas"
         change:
           advance: code-review
@@ -236,7 +219,6 @@ boards:
       code-review:
         name: "Code Review"
         desc: "Humano faz code review do PR"
-        git_merge: true
         change:
           advance: concluido
           reprovar: desenvolvimento
@@ -271,7 +253,6 @@ boards:
         name: "Correção"
         desc: "Agente de engenharia corrige o problema"
         agent: engineering
-        git_commit: true
         acao: "Corrigir o bug reportado, garantindo que os testes existentes continuem passando"
         change:
           advance: reteste
@@ -279,8 +260,6 @@ boards:
         name: "Reteste"
         desc: "Agente de qualidade refaz os testes"
         agent: quality
-        git_commit: true
-        git_merge: true
         acao: "Reexecutar casos de teste e validar que o bug foi corrigido sem regressão"
         change:
           advance: concluido
@@ -310,8 +289,6 @@ boards:
         name: "Resolução"
         desc: "Agente ou humano sana o débito"
         agent: engineering
-        git_commit: true
-        git_merge: true
         acao: "Sanar o débito técnico ou negocial conforme descrito, documentando a solução"
         change:
           advance: concluido

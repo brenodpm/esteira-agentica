@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from src.github import push_boards, GitHubError, RateLimitError
+from src.log import log
 
 BOARDS_DIR = Path(".pipe/boards")
 PIPE_DIR = Path(".pipe")
@@ -75,9 +76,9 @@ def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
     try:
         push_boards(config, desired_names)
     except RateLimitError:
-        print("  ⚠ Rate limit — push de boards adiado.")
+        log.warning("Rate limit — push de boards adiado")
     except GitHubError as e:
-        print(f"  ⚠ Erro GitHub (boards): {e}")
+        log.error("Erro GitHub (boards): %s", e)
 
 
 def sync(config: dict) -> None:
@@ -93,12 +94,12 @@ def sync(config: dict) -> None:
         _ensure_local_dirs(desired)
         _sync_github(config, desired)
         _save_snapshot({"pipe_mtime": mtime, "boards": desired})
-        print("Sync concluído (pipe.yml atualizado).")
+        log.info("Sync concluído (pipe.yml atualizado)")
     elif not BOARDS_DIR.exists():
         # primeira execução sem snapshot
         _ensure_local_dirs(desired)
         _sync_github(config, desired)
         _save_snapshot({"pipe_mtime": mtime, "boards": desired})
-        print("Sync concluído (inicialização).")
+        log.info("Sync concluído (inicialização)")
     else:
-        print("Sync: pipe.yml sem alterações, nada a fazer.")
+        log.info("Sync: pipe.yml sem alterações")

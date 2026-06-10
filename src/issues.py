@@ -10,6 +10,7 @@ from src.github import (
     fetch_board_items, fetch_issue_comments, fetch_updated_issues,
     GitHubError, RateLimitError,
 )
+from src.log import log
 
 PIPE_DIR = Path(".pipe")
 BOARDS_DIR = PIPE_DIR / "boards"
@@ -116,7 +117,7 @@ def _handle_orphan_files(issue: dict, new_col_path: Path, repo: str) -> None:
     if old_write.exists() and old_write.parent != new_col_path:
         content = old_write.read_text().strip()
         if content:
-            print(f"  TODO: postar comentário da issue #{issue['id']} (write órfão)")
+            log.info("Write órfão issue #%s — pendente postar comentário", issue['id'])
         old_write.unlink()
 
 
@@ -157,10 +158,10 @@ def sync_issues(config: dict) -> None:
 
         remote_items = fetch_board_items(config)
     except RateLimitError:
-        print("  ⚠ Rate limit — sync de issues adiado.")
+        log.warning("Rate limit — sync de issues adiado")
         return
     except GitHubError as e:
-        print(f"  ⚠ Erro GitHub (issues): {e}")
+        log.error("Erro GitHub (issues): %s", e)
         return
 
     # Indexar remote por board_id -> {number: item}
@@ -184,7 +185,7 @@ def sync_issues(config: dict) -> None:
 
         # Processar issues existentes no snapshot
         for issue in issues:
-            if issue["status"] in ("b-new",):
+            if issue["status"] in ("b-new", "l-new"):
                 continue  # será tratado na fase de ações
 
             number = issue["id"]
@@ -250,10 +251,34 @@ def sync_issues(config: dict) -> None:
 
         # QUANDO arquivo no diretório mas não no snapshot
         snapshot_ids = {i["id"] for i in issues}
+        snapshot_paths = {i["path"] for i in issues}
         for file_id, file_path in local_files.items():
             if file_id in snapshot_ids:
                 continue
-            # Issue nova local
+            if str(file_path) in snapshot_paths:
+                continue
+
+            # Se já existe no remote, é reconciliação (não é l-new)
+            if file_id in remote:
+                remote_item = remote[file_id]
+                col_id = _col_from_path(file_path)
+                slug = file_path.stem
+                status = "ok" if col_id == remote_item["col_id"] else "l-mv"
+                entry = {
+                    "id": file_id,
+                    "name": _sanitize_name(remote_item["title"]),
+                    "column": col_id,
+                    "path": str(file_path),
+                    "history_path": str(file_path.parent / f"{slug}-history.md"),
+                    "write_path": str(file_path.parent / f"{slug}-write.md"),
+                    "l-time": str(file_path.stat().st_mtime),
+                    "b-time": _now_iso(),
+                    "status": status,
+                }
+                issues.append(entry)
+                continue
+
+            # Issue nova local (não existe no remote)
             first_line = ""
             try:
                 first_line = file_path.read_text().splitlines()[0].lstrip("# ").strip()
@@ -275,11 +300,9 @@ def sync_issues(config: dict) -> None:
             issues.append(entry)
 
         # QUANDO issues novas vindo do board (não estão no snapshot)
+        current_ids = {i["id"] for i in issues}
         for number, remote_item in remote.items():
-            if number in snapshot_ids:
-                continue
-            # Checa se já adicionamos como l-new
-            if any(i["id"] == number for i in issues):
+            if number in current_ids:
                 continue
 
             slug = _slugify(remote_item["title"])
@@ -357,8 +380,11 @@ def _detect_local_changes(snapshot: dict, config: dict) -> None:
 
         # Novos arquivos locais
         snapshot_ids = {i["id"] for i in issues}
+        snapshot_paths = {i["path"] for i in issues}
         for file_id, file_path in local_files.items():
             if file_id in snapshot_ids:
+                continue
+            if str(file_path) in snapshot_paths:
                 continue
             first_line = ""
             try:
@@ -391,9 +417,11 @@ def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> Non
 
             if status == "b-new":
                 _action_b_new(issue, repo)
+                log.info("[%s] b-new #%s %s", board_id, issue["id"], issue["name"])
 
             elif status == "b-del":
                 _action_b_del(issue)
+                log.info("[%s] b-del #%s", board_id, issue["id"])
                 to_remove.append(i)
 
             elif status == "b-sync":
@@ -401,19 +429,23 @@ def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> Non
 
             elif status == "b-mv":
                 _action_b_mv(issue, repo)
+                log.info("[%s] b-mv #%s → %s", board_id, issue["id"], issue["column"])
 
             elif status == "l-del":
                 _action_l_del(issue, config, board_id)
+                log.info("[%s] l-del #%s", board_id, issue["id"])
                 to_remove.append(i)
 
             elif status == "l-mv":
                 _action_l_mv(issue, config, board_id)
+                log.info("[%s] l-mv #%s → %s", board_id, issue["id"], issue["column"])
 
             elif status == "l-sync":
                 _action_l_sync(issue, repo)
 
             elif status == "l-new":
                 _action_l_new(issue, config, board_id, repo)
+                log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
 
         # Remove do snapshot
         for idx in reversed(to_remove):

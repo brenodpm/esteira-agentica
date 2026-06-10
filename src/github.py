@@ -3,6 +3,8 @@
 import json
 import subprocess
 
+from src.log import log
+
 
 class GitHubError(Exception):
     """Erro genérico de comunicação com GitHub."""
@@ -18,9 +20,11 @@ def _gh(*args) -> str:
     error = result.stderr.strip()
 
     if "rate limit" in output.lower() or "rate limit" in error.lower():
+        log.warning("Rate limit na chamada: gh %s", " ".join(args[:3]))
         raise RateLimitError("GitHub API rate limit excedido")
 
     if result.returncode != 0:
+        log.debug("gh %s → erro: %s", " ".join(args[:3]), error or output)
         raise GitHubError(error or output or f"gh retornou código {result.returncode}")
 
     return result.stdout
@@ -176,8 +180,9 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
 def create_issue(repo: str, title: str, body: str) -> int:
     """Cria issue no repo. Retorna o number."""
     out = _gh("issue", "create", "--repo", repo,
-              "--title", title, "--body", body, "--json", "number")
-    return json.loads(out)["number"]
+              "--title", title, "--body", body)
+    # out é a URL da issue criada, ex: https://github.com/owner/repo/issues/42
+    return int(out.strip().split("/")[-1])
 
 
 def close_issue(repo: str, issue_number: int) -> None:
