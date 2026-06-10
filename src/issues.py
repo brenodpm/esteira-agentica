@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.github import (
     fetch_board_items, fetch_issue_comments, fetch_updated_issues,
+    fetch_issues_created_at,
     GitHubError, RateLimitError,
 )
 from src.log import log
@@ -157,6 +158,7 @@ def sync_issues(config: dict) -> None:
                 return
 
         remote_items = fetch_board_items(config)
+        created_at_map = fetch_issues_created_at(repo)
     except RateLimitError:
         log.warning("Rate limit — sync de issues adiado")
         return
@@ -273,6 +275,7 @@ def sync_issues(config: dict) -> None:
                     "write_path": str(file_path.parent / f"{slug}-write.md"),
                     "l-time": str(file_path.stat().st_mtime),
                     "b-time": _now_iso(),
+                    "created_at": created_at_map.get(file_id, ""),
                     "status": status,
                 }
                 issues.append(entry)
@@ -295,6 +298,7 @@ def sync_issues(config: dict) -> None:
                 "write_path": str(file_path.parent / f"{file_path.stem}-write.md"),
                 "l-time": str(file_path.stat().st_mtime),
                 "b-time": None,
+                "created_at": _now_iso(),
                 "status": "l-new",
             }
             issues.append(entry)
@@ -318,6 +322,7 @@ def sync_issues(config: dict) -> None:
                 "write_path": str(col_path / f"{base}-write.md"),
                 "l-time": None,
                 "b-time": None,
+                "created_at": created_at_map.get(number, ""),
                 "status": "b-new",
             }
             issues.append(entry)
@@ -401,6 +406,7 @@ def _detect_local_changes(snapshot: dict, config: dict) -> None:
                 "write_path": str(file_path.parent / f"{file_path.stem}-write.md"),
                 "l-time": str(file_path.stat().st_mtime),
                 "b-time": None,
+                "created_at": _now_iso(),
                 "status": "l-new",
             })
 

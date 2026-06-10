@@ -135,6 +135,13 @@ def fetch_issue_comments(repo: str, issue_number: int) -> dict:
     return json.loads(out)
 
 
+def fetch_issues_created_at(repo: str) -> dict[int, str]:
+    """Retorna {number: createdAt} de todas as issues do repo."""
+    out = _gh("issue", "list", "--repo", repo, "--state", "all",
+              "--json", "number,createdAt", "--limit", "200")
+    return {i["number"]: i["createdAt"] for i in json.loads(out)}
+
+
 def fetch_updated_issues(repo: str, since: str) -> list[int]:
     """Retorna números das issues modificadas após a data de corte."""
     date_part = since[:10]
