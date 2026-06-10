@@ -52,6 +52,8 @@ Define os boards do projeto. Cada board corresponde a um GitHub Project V2 e um 
 
 | Campo      | Descrição                                                                 |
 |------------|---------------------------------------------------------------------------|
+| `bugs`     | ID do board onde bugs são criados.                                         |
+| `needs`    | ID do board onde demandas para humanos ou outros agentes são criadas.      |
 | `name`     | Nome visível do board no GitHub Projects.                                  |
 | `todo`     | ID da coluna inicial onde issues novas entram.                             |
 | `priority` | Prioridade de execução do board (0 = mais alta). Boards com menor valor são processados primeiro. |
@@ -67,6 +69,8 @@ Cada board possui um mapa de colunas. Cada coluna vira um subdiretório em `.pip
 | `name`         | Nome visível da coluna no GitHub Projects (campo Status).               |
 | `desc`         | Descrição do que acontece nessa etapa.                                  |
 | `agent`        | Nome do agente responsável por executar a ação nessa coluna. Se ausente, a coluna é manual (humano). |
+| `effort`       | Nível de raciocínio do agente: `low`, `medium` ou `high`. Opcional, padrão `medium`. Níveis mais altos gastam mais tokens em análise profunda e geração minuciosa; níveis mais baixos produzem respostas mais rápidas e diretas. |
+| `gitevents`    | Lista opcional de eventos git da coluna: `create` (cria branch conforme gitflow), `keep` (padrão — branch já existe e é mantida), `merge` (solicita merge request ao concluir). Aceita combinação de eventos. |
 | `acao`         | Instrução textual do que o agente deve fazer quando uma issue chega nessa coluna. |
 | `git_commit`   | Se `true`, o agente faz commit das alterações produzidas.               |
 | `git_merge`    | Se `true`, a coluna envolve criação de PR ou merge para a branch destino do flow. |

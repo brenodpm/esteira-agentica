@@ -13,6 +13,20 @@ Reescrita completa do projeto `esteira-agentica-ruim` com lógica nova.
 2. **Disco local** — reflete o pipe.yml; movimentação de issues propaga para o GitHub
 3. **GitHub** — recebe atualizações; nunca sobrescreve pipe.yml ou estrutura local
 
+## Propriedades Globais de Boards
+
+| Campo          | Descrição                                                            |
+|----------------|----------------------------------------------------------------------|
+| `boards.bugs`  | ID do board onde bugs são criados.                                    |
+| `boards.needs` | ID do board onde demandas para humanos ou outros agentes são criadas. |
+
+## Propriedades de Colunas
+
+| Campo       | Descrição                                                                                     |
+|-------------|-----------------------------------------------------------------------------------------------|
+| `effort`    | Nível de raciocínio do agente: `low`, `medium` ou `high`. Opcional, padrão `medium`. Níveis mais altos gastam mais tokens em análise profunda; níveis mais baixos produzem respostas mais rápidas. |
+| `gitevents` | Lista opcional de eventos git da coluna: `create` (cria branch conforme gitflow), `keep` (padrão — branch já existe e é mantida), `merge` (solicita merge request ao concluir). Aceita combinação de eventos. |
+
 ## Estrutura de Diretórios
 
 ```

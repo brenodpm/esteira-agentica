@@ -42,6 +42,8 @@ git:
       merge: release     # prefixo → resolver via issue
 
 boards:
+  bugs: bug
+  needs: demanda
 
   # ──────────────────────────────────────────────
   # DEMANDA — ciclo completo de uma demanda negocial
@@ -64,6 +66,8 @@ boards:
         name: "Análise de Negócio"
         desc: "Agente de negócio entende a demanda e cria documentações negociais"
         agent: product
+        effort: high
+        gitevents: [create]
         acao: "Entender a demanda, produzir visão de produto, problem-space e épicos"
         change:
           advance: aprovacao-negocio
@@ -102,6 +106,7 @@ boards:
         name: "Documentação"
         desc: "Agente de negócio cria ou atualiza documentação pública e README"
         agent: product
+        effort: low
         acao: "Atualizar README e documentação pública refletindo as mudanças entregues"
         change:
           advance: otimizacao
@@ -109,6 +114,7 @@ boards:
         name: "Otimização"
         desc: "Agente especialista em IA analisa desempenho e melhora os agentes"
         agent: optimizer
+        gitevents: [merge]
         acao: "Analisar métricas e logs da demanda, propor melhorias nos agentes para aumentar desempenho e reduzir custos"
         change:
           advance: concluido
@@ -137,6 +143,7 @@ boards:
         name: "Requisitos"
         desc: "Agente de requisitos levanta requisitos e complementa documentações"
         agent: requirements
+        gitevents: [create]
         acao: "Levantar requisitos funcionais e não-funcionais, complementar documentações negociais com critérios técnicos"
         change:
           advance: arquitetura
@@ -144,6 +151,7 @@ boards:
         name: "Arquitetura"
         desc: "Agente de arquitetura define a arquitetura da story"
         agent: architecture
+        effort: high
         acao: "Definir arquitetura técnica, ADRs e constraints para a story"
         change:
           advance: validacao-artefatos
@@ -169,6 +177,8 @@ boards:
         name: "Change File"
         desc: "Agente líder técnico cria o change file da story"
         agent: tech-lead
+        effort: low
+        gitevents: [merge]
         acao: "Criar change file documentando todas as alterações entregues na story"
         change:
           advance: concluido
@@ -197,6 +207,7 @@ boards:
         name: "Casos de Teste"
         desc: "Agente de qualidade escreve os casos de teste"
         agent: quality
+        gitevents: [create]
         acao: "Escrever casos de teste baseados nos critérios de aceitação da task"
         change:
           advance: desenvolvimento
@@ -204,6 +215,7 @@ boards:
         name: "Desenvolvimento"
         desc: "Agente de engenharia cria código e cobertura de testes (TDD)"
         agent: engineering
+        effort: high
         acao: "Implementar a task seguindo TDD, garantindo cobertura dos casos de teste definidos"
         change:
           advance: execucao-testes
@@ -212,6 +224,7 @@ boards:
         name: "Execução de Testes"
         desc: "Agente de qualidade executa os casos de teste"
         agent: quality
+        gitevents: [merge]
         acao: "Executar casos de teste, registrar resultados e reportar falhas"
         change:
           advance: code-review
@@ -253,6 +266,7 @@ boards:
         name: "Correção"
         desc: "Agente de engenharia corrige o problema"
         agent: engineering
+        gitevents: [create]
         acao: "Corrigir o bug reportado, garantindo que os testes existentes continuem passando"
         change:
           advance: reteste
@@ -260,6 +274,7 @@ boards:
         name: "Reteste"
         desc: "Agente de qualidade refaz os testes"
         agent: quality
+        gitevents: [merge]
         acao: "Reexecutar casos de teste e validar que o bug foi corrigido sem regressão"
         change:
           advance: concluido
@@ -289,6 +304,7 @@ boards:
         name: "Resolução"
         desc: "Agente ou humano sana o débito"
         agent: engineering
+        gitevents: [create, merge]
         acao: "Sanar o débito técnico ou negocial conforme descrito, documentando a solução"
         change:
           advance: concluido
