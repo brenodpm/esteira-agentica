@@ -5,6 +5,7 @@ from src.log import log
 from src.sync import sync
 from src.issues import sync_issues
 from src.pick_task import pick_task
+from src.agent import run_agent
 from src.github import RateLimitError, GitHubError
 
 
@@ -22,7 +23,7 @@ def main():
             log.info("Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
                         task["id"], task.get("created_at", "?"), task["name"],
                         task["board_id"], task["column"])
-            raise RuntimeError("Execução de tarefa ainda não implementada")
+            run_agent(config, task)
         else:
             log.info("Nenhuma tarefa elegível")
             log.info("intervalo: %ds", sleeptime)
