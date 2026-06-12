@@ -30,16 +30,59 @@ def _resolve_branch(config: dict, task: dict, board: dict) -> str:
     return _resolve_branch_name(task, flow, flow_type)
 
 
-def _resolve_origin_branch(config: dict, board: dict) -> str:
-    flow_type = board.get("flow", "feature")
-    flow = config["git"]["flow"]
-    return flow[flow_type].get("create", flow.get("base", "main"))
+def _is_fixed_branch(name: str, flow: dict) -> bool:
+    """Retorna True se o nome é uma branch fixa (não é prefixo de outro flow)."""
+    prefixes = {f["prefix"] for f in flow.values() if isinstance(f, dict) and "prefix" in f}
+    return name not in prefixes
 
 
-def _resolve_merge_branch(config: dict, board: dict) -> str:
+def _read_branch_from_issue(task_path: str) -> str | None:
+    """Extrai branch da issue via <!-- branch: X --> ou label branch:X."""
+    p = Path(task_path)
+    if not p.exists():
+        return None
+    content = p.read_text()
+    # <!-- branch: release/v1.0 -->
+    m = re.search(r"<!--\s*branch:\s*(.+?)\s*-->", content)
+    if m:
+        return m.group(1).strip()
+    # /branch release/v1.0 ou label branch:release/v1.0
+    m = re.search(r"(?:^|\s)/branch\s+(\S+)", content)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r"branch:(\S+)", content)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def _resolve_target_branch(config: dict, board: dict, task: dict, direction: str) -> str | None:
+    """Resolve a branch de create ou merge.
+    
+    Retorna o nome exato da branch se possível, ou None se não conseguir resolver.
+    direction: 'create' ou 'merge'
+    """
     flow_type = board.get("flow", "feature")
     flow = config["git"]["flow"]
-    return flow[flow_type].get("merge", flow.get("base", "main"))
+    target = flow[flow_type].get(direction, flow.get("base", "main"))
+
+    if _is_fixed_branch(target, flow):
+        return target
+
+    # É um prefixo — tentar resolver da issue
+    branch_from_issue = _read_branch_from_issue(task["path"])
+    if branch_from_issue and branch_from_issue.startswith(target):
+        return branch_from_issue
+
+    return None
+
+
+def _resolve_origin_branch(config: dict, board: dict, task: dict) -> str | None:
+    return _resolve_target_branch(config, board, task, "create")
+
+
+def _resolve_merge_branch(config: dict, board: dict, task: dict) -> str | None:
+    return _resolve_target_branch(config, board, task, "merge")
 
 
 def _parse_effort_tag(task_path: str) -> str | None:
@@ -79,49 +122,106 @@ def build_prompt(config: dict, task: dict) -> str:
     gitevents = column.get("gitevents", [])
 
     branch_name = _resolve_branch(config, task, board)
-    origin_branch = _resolve_origin_branch(config, board)
-    merge_branch = _resolve_merge_branch(config, board)
+    origin_branch = _resolve_origin_branch(config, board, task)
+    merge_branch = _resolve_merge_branch(config, board, task)
     base_branch = config["git"]["flow"].get("base", "main")
+
+    flow_type = board.get("flow", "feature")
+    flow = config["git"]["flow"]
+    origin_prefix = flow[flow_type].get("create", flow.get("base", "main"))
+    merge_prefix = flow[flow_type].get("merge", flow.get("base", "main"))
 
     create_branch = "create" in gitevents
     do_merge = "merge" in gitevents
 
+    needs_board = config.get("boards_meta", {}).get("needs", "debito")
+    needs_dir = str(BOARDS_DIR / needs_board / "backlog")
+
     lines = []
 
-    # Cabeçalho
-    lines.append("")
-
-    # Etapa e tarefa
     lines.append(f"Etapa: {column.get('name', task['column'])}")
     lines.append(f"Tarefa: {task['name']}")
     lines.append("")
 
-    # Instruções
-    lines.append("Faça:")
+    # --- GIT SETUP ---
+    lines.append("## 1. Git setup (execute via shell)")
+    lines.append("```bash")
+    lines.append("git fetch origin")
     if create_branch:
-        lines.append(f"- [ ] criar branch {branch_name} a partir da {origin_branch}")
+        if origin_branch:
+            lines.append(f"git checkout {origin_branch} && git pull origin {origin_branch}")
+        else:
+            lines.append(f"# branch de origem é um prefixo '{origin_prefix}' — descubra a branch exata:")
+            lines.append(f"# procure no body da issue em `{task['path']}` por <!-- branch: {origin_prefix}/... -->")
+            lines.append(f"# ou use: git branch -r | grep 'origin/{origin_prefix}/' | head -1")
+            lines.append(f"# então: git checkout <branch_encontrada> && git pull origin <branch_encontrada>")
+        lines.append(f"git checkout -b {branch_name}")
     else:
-        lines.append(f"- [ ] usar branch {branch_name}")
-    lines.append(f"- [ ] executar tarefa `{task['path']}`")
-    lines.append(f"- [ ] checar se as tarefas em `/blocked_by` foram concluidas, se não foram, anotar comentário em {task['write_path']} e encerrar processamento")
-    lines.append(f"- [ ] se houver dúvidas escrever as dúvidas no write e adicinar /need_human no body da tarefa")
-    needs_board = config.get("boards_meta", {}).get("needs", "debito")
-    needs_dir = str(BOARDS_DIR / needs_board / "backlog")
-    lines.append(f"- [ ] se houver demanda bloqueante, abrir um card no board {needs_dir}")
-    lines.append("- [ ] fazer commit e push")
-    if do_merge:
-        lines.append(f"- [ ] criar merge request para {merge_branch}")
-    lines.append(f"- [ ] Anotar um resumo curto do que foi executado em `{task['write_path']}`")
-    lines.append(f"- [ ] fazer checkout para {base_branch} e apagar todas as branchs locais ()")
-    lines.append("")
+        lines.append(f"git checkout {branch_name} 2>/dev/null || git checkout -b {branch_name} origin/{branch_name}")
+        lines.append(f"git pull origin {branch_name} 2>/dev/null || true")
+    lines.append("```")
     lines.append("")
 
-    # Transições
-    lines.append("Após conclusão da tarefa mova o issue")
+    # --- EXECUÇÃO DA TAREFA ---
+    lines.append("## 2. Executar tarefa")
+    lines.append(f"- Leia a issue em `{task['path']}` e execute o que é pedido")
+    lines.append(f"- Verifique se as tarefas em `/blocked_by` foram concluídas; se NÃO: anote em `{task['write_path']}` e vá direto para o passo de cleanup")
+    lines.append(f"- Se houver dúvidas: escreva em `{task['write_path']}` e adicione `/need_human` no body da issue, depois vá para cleanup")
+    lines.append(f"- Se houver demanda bloqueante: crie um card em `{needs_dir}`")
+    lines.append("")
+
+    # --- COMMIT & PUSH ---
+    lines.append("## 3. Commit e push (execute via shell)")
+    lines.append("```bash")
+    lines.append("git add -A")
+    lines.append(f'git commit -m "{column.get("name", task["column"])}: {task["name"]}"')
+    lines.append(f"git push -u origin {branch_name}")
+    lines.append("```")
+    lines.append("")
+
+    # --- MERGE ---
+    if do_merge:
+        lines.append("## 4. Merge (execute via shell)")
+        if merge_branch:
+            lines.append("```bash")
+            lines.append(f"git checkout {merge_branch} && git pull origin {merge_branch}")
+            lines.append(f"git merge {branch_name} --no-ff -m \"merge: {branch_name} -> {merge_branch}\"")
+            lines.append(f"git push origin {merge_branch}")
+            lines.append("```")
+        else:
+            lines.append(f"A branch de merge usa prefixo '{merge_prefix}'. Descubra a branch exata:")
+            lines.append(f"- Procure no body da issue `{task['path']}` por `<!-- branch: {merge_prefix}/... -->`")
+            lines.append(f"- Ou use: `git branch -r | grep 'origin/{merge_prefix}/'` para encontrar")
+            lines.append("```bash")
+            lines.append("# substitua <MERGE_BRANCH> pela branch correta encontrada:")
+            lines.append("git checkout <MERGE_BRANCH> && git pull origin <MERGE_BRANCH>")
+            lines.append(f"git merge {branch_name} --no-ff -m \"merge: {branch_name} -> <MERGE_BRANCH>\"")
+            lines.append("git push origin <MERGE_BRANCH>")
+            lines.append("```")
+        lines.append("")
+
+    # --- RESUMO ---
+    step = 5 if do_merge else 4
+    lines.append(f"## {step}. Resumo")
+    lines.append(f"- Anote um resumo curto do que foi executado em `{task['write_path']}`")
+    lines.append("")
+
+    # --- CLEANUP ---
+    step += 1
+    lines.append(f"## {step}. Cleanup (execute via shell)")
+    lines.append("```bash")
+    lines.append(f"git checkout {base_branch}")
+    lines.append(f"git branch -D {branch_name} 2>/dev/null || true")
+    lines.append("```")
+    lines.append("")
+
+    # --- TRANSIÇÕES ---
+    lines.append("## Transição de coluna")
+    lines.append("Mova o arquivo da issue para a coluna correta:")
     change = column.get("change", {})
     for condition, target_col in change.items():
         target_dir = str(BOARDS_DIR / board_id / target_col)
-        lines.append(f"se {condition} >> mover para {target_dir}")
+        lines.append(f"- se **{condition}** → mover arquivo para `{target_dir}/`")
 
     return "\n".join(lines)
 
