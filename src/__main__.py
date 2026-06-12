@@ -4,7 +4,7 @@ from src.config import load_config
 from src.log import log, cleanup_logs
 from src.sync import sync
 from src.issues import sync_issues
-from src.pick_task import pick_task
+from src.pick_task import pick_task, TODO_ADVANCE
 from src.agent import run_agent
 from src.github import RateLimitError, GitHubError
 
@@ -20,7 +20,9 @@ def main():
     try:
         sync_issues(config)
         task = pick_task(config)
-        if task:
+        if task == TODO_ADVANCE:
+            log.info("Auto-advance realizado — aguardando sync propagar")
+        elif task:
             log.info("Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
                         task["id"], task.get("created_at", "?"), task["name"],
                         task["board_id"], task["column"])

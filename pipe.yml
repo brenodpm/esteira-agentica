@@ -81,7 +81,7 @@ boards:
         agent: product
         effort: high
         gitevents: [create]
-        acao: "Entender o épico, produzir visão de produto, problem-space e épicos"
+        acao: "Entender o épico, produzir visão de produto, problem-space e épicos\n\n# Atenção, nesta etapa não se cria issues no board, apenas as documentações"
         change:
           advance: aprovacao-negocio
       aprovacao-negocio:

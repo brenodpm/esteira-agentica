@@ -141,6 +141,8 @@ def build_prompt(config: dict, task: dict) -> str:
 
     lines.append(f"Etapa: {column.get('name', task['column'])}")
     lines.append(f"Tarefa: {task['name']}")
+    if column.get("acao"):
+        lines.append(f"Descrição: {column['acao']}")
     lines.append("")
 
     # --- GIT SETUP ---
