@@ -150,7 +150,7 @@ def _agent_log_path(task: dict) -> Path:
 
 
 def run_agent(config: dict, task: dict):
-    """Executa o agente via kiro CLI e salva output no log."""
+    """Executa o agente via kiro-cli e salva output no log."""
     board = config["boards"][task["board_id"]]
     column = board["columns"][task["column"]]
     agent_name = column.get("agent", "unknown")
@@ -161,9 +161,12 @@ def run_agent(config: dict, task: dict):
 
     log.info("Executando agente '%s' para #%s...", agent_name, task["id"])
 
+    cmd = ["kiro-cli", "chat", "--agent", agent_name, "--no-interactive"]
+
     try:
         result = subprocess.run(
-            ["kiro", "chat", "--prompt", prompt],
+            cmd,
+            input=prompt,
             capture_output=True, text=True, timeout=timeout
         )
         output = result.stdout + result.stderr
@@ -171,7 +174,7 @@ def run_agent(config: dict, task: dict):
         output = f"[TIMEOUT] Agente excedeu {timeout}s"
         log.error(output)
     except FileNotFoundError:
-        output = "[ERRO] kiro CLI não encontrado no PATH"
+        output = "[ERRO] kiro-cli não encontrado no PATH"
         log.error(output)
 
     # Salvar log do agente
