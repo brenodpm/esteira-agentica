@@ -16,27 +16,27 @@ def main():
 
     sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
     log.info("Loop iniciado")
-    # while True: # reativar loop quando começarmos a atuar com agents nas tarefas
-    try:
-        sync_issues(config)
-        task = pick_task(config)
-        if task == TODO_ADVANCE:
-            log.info("Auto-advance realizado — aguardando sync propagar")
-        elif task:
-            log.info("Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
-                        task["id"], task.get("created_at", "?"), task["name"],
-                        task["board_id"], task["column"])
-            run_agent(config, task)
-        else:
-            log.info("Nenhuma tarefa elegível")
-            log.info("intervalo: %ds", sleeptime)
-            time.sleep(sleeptime)
-    except RateLimitError:
-        log.warning("Rate limit — aguardando próximo ciclo")
-    except GitHubError as e:
-        log.error("Erro GitHub: %s", e)
-    except Exception as e:
-        log.error("Erro inesperado: %s", e, exc_info=True)
+    while True:
+        try:
+            sync_issues(config)
+            task = pick_task(config)
+            if task == TODO_ADVANCE:
+                log.info("Auto-advance realizado — aguardando sync propagar")
+            elif task:
+                log.info("Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
+                            task["id"], task.get("created_at", "?"), task["name"],
+                            task["board_id"], task["column"])
+                run_agent(config, task)
+            else:
+                log.info("Nenhuma tarefa elegível")
+                log.info("intervalo: %ds", sleeptime)
+                time.sleep(sleeptime)
+        except RateLimitError:
+            log.warning("Rate limit — aguardando próximo ciclo")
+        except GitHubError as e:
+            log.error("Erro GitHub: %s", e)
+        except Exception as e:
+            log.error("Erro inesperado: %s", e, exc_info=True)
 
 
 if __name__ == "__main__":

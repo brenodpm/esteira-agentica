@@ -136,6 +136,8 @@ def _should_full_sync(last_sync: str | None) -> bool:
 
 def sync_issues(config: dict) -> None:
     """Loop principal de sincronização de issues."""
+
+    log.info("Verificando movimentação de issues")
     snapshot = _load_snapshot()
     if "issues" not in snapshot:
         snapshot["issues"] = {}

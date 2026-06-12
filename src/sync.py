@@ -82,7 +82,8 @@ def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
 
 
 def sync(config: dict) -> None:
-    """Sincroniza estrutura. Prioridade: pipe.yml → disco → GitHub."""
+    log.info("Sync iniciado...")
+    
     snapshot = _load_snapshot()
     mtime = _pipe_mtime()
 
