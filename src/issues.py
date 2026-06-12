@@ -282,26 +282,24 @@ def sync_issues(config: dict) -> None:
                 continue
 
             # Issue nova local (não existe no remote)
-            first_line = ""
-            try:
-                first_line = file_path.read_text().splitlines()[0].lstrip("# ").strip()
-            except (IndexError, OSError):
-                first_line = file_path.stem
-
-            col_id = _col_from_path(file_path)
-            entry = {
-                "id": None,
-                "name": _sanitize_name(first_line),
-                "column": col_id,
-                "path": str(file_path),
-                "history_path": str(file_path.parent / f"{file_path.stem}-history.md"),
-                "write_path": str(file_path.parent / f"{file_path.stem}-write.md"),
-                "l-time": str(file_path.stat().st_mtime),
-                "b-time": None,
-                "created_at": _now_iso(),
-                "status": "l-new",
-            }
-            issues.append(entry)
+            # Se o arquivo já tem ID numérico, é reconciliação (issue já existe no GitHub)
+            if file_id is not None:
+                col_id = _col_from_path(file_path)
+                slug = file_path.stem
+                entry = {
+                    "id": file_id,
+                    "name": _sanitize_name(file_path.stem.split("-", 1)[1]) if "-" in file_path.stem else file_path.stem,
+                    "column": col_id,
+                    "path": str(file_path),
+                    "history_path": str(file_path.parent / f"{slug}-history.md"),
+                    "write_path": str(file_path.parent / f"{slug}-write.md"),
+                    "l-time": str(file_path.stat().st_mtime),
+                    "b-time": _now_iso(),
+                    "created_at": created_at_map.get(file_id, ""),
+                    "status": "ok",
+                }
+                issues.append(entry)
+                continue
 
         # QUANDO issues novas vindo do board (não estão no snapshot)
         current_ids = {i["id"] for i in issues}
@@ -567,7 +565,7 @@ def _action_b_mv(issue: dict, repo: str) -> None:
 
 def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     """Cria issue no GitHub, apaga arquivo original, recria com padrão correto."""
-    from src.github import create_issue, move_card
+    from src.github import create_issue, move_card, find_issue_by_title
 
     filepath = Path(issue["path"])
     body = ""
@@ -576,8 +574,12 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
         # Pula a primeira linha (# titulo) e linha vazia
         body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
 
-    # Cria no GitHub
-    number = create_issue(repo, issue["name"], body)
+    # Deduplicação: verificar se issue com mesmo título já existe
+    existing = find_issue_by_title(repo, issue["name"])
+    if existing:
+        number = existing
+    else:
+        number = create_issue(repo, issue["name"], body)
     issue["id"] = number
 
     # Move para coluna correta no board

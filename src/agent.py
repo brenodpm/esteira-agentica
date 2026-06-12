@@ -1,12 +1,15 @@
 """Geração do prompt de execução do agente."""
 
 import json
+import re
+import subprocess
 from pathlib import Path
 
 from src.log import log
 
 AGENTS_DIR = Path(".kiro/agents")
 BOARDS_DIR = Path(".pipe/boards")
+LOGS_DIR = Path("logs")
 
 
 def _load_agent(name: str) -> dict:
@@ -130,7 +133,56 @@ def build_prompt(config: dict, task: dict) -> str:
     return "\n".join(lines)
 
 
+def _parse_credits(output: str) -> dict:
+    """Extrai credits e time da saída do kiro CLI."""
+    match = re.search(r"Credits:\s*([\d.]+)\s*.*?Time:\s*(.+?)$", output, re.MULTILINE)
+    if match:
+        return {"credits": match.group(1), "time": match.group(2).strip()}
+    return {}
+
+
+def _agent_log_path(task: dict) -> Path:
+    """Retorna path do log: logs/<issue_id>/<board_id>-<col_id>-<agent>.log"""
+    board_id = task["board_id"]
+    col_id = task["column"]
+    agent_name = task.get("_agent", "unknown")
+    return LOGS_DIR / str(task["id"]) / f"{board_id}-{col_id}-{agent_name}.log"
+
+
 def run_agent(config: dict, task: dict):
-    """Gera e imprime o prompt do agente (sem execução real por enquanto)."""
+    """Executa o agente via kiro CLI e salva output no log."""
+    board = config["boards"][task["board_id"]]
+    column = board["columns"][task["column"]]
+    agent_name = column.get("agent", "unknown")
+    task["_agent"] = agent_name
+
     prompt = build_prompt(config, task)
-    print(prompt)
+    timeout = config["pipe"].get("agent", {}).get("timeout", 1800)
+
+    log.info("Executando agente '%s' para #%s...", agent_name, task["id"])
+
+    try:
+        result = subprocess.run(
+            ["kiro", "chat", "--prompt", prompt],
+            capture_output=True, text=True, timeout=timeout
+        )
+        output = result.stdout + result.stderr
+    except subprocess.TimeoutExpired:
+        output = f"[TIMEOUT] Agente excedeu {timeout}s"
+        log.error(output)
+    except FileNotFoundError:
+        output = "[ERRO] kiro CLI não encontrado no PATH"
+        log.error(output)
+
+    # Salvar log do agente
+    log_path = _agent_log_path(task)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(output, encoding="utf-8")
+
+    # Extrair e logar credits
+    credits_info = _parse_credits(output)
+    if credits_info:
+        log.info("Agente '%s' #%s — Credits: %s • Time: %s",
+                 agent_name, task["id"], credits_info["credits"], credits_info["time"])
+    else:
+        log.info("Agente '%s' #%s — execução concluída (credits não capturados)", agent_name, task["id"])

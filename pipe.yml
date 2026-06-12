@@ -3,6 +3,8 @@ pipe:
     timeout: 1800
     sleeptime: 30
 
+ttl-log: 10
+
 effort:
   low:
     model: claude-haiku-3.5

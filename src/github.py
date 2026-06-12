@@ -192,6 +192,16 @@ def create_issue(repo: str, title: str, body: str) -> int:
     return int(out.strip().split("/")[-1])
 
 
+def find_issue_by_title(repo: str, title: str) -> int | None:
+    """Busca issue aberta com título exato. Retorna number ou None."""
+    out = _gh("issue", "list", "--repo", repo, "--state", "open",
+              "--search", f"in:title {title}", "--json", "number,title", "--limit", "50")
+    for issue in json.loads(out):
+        if issue["title"].strip() == title.strip():
+            return issue["number"]
+    return None
+
+
 def close_issue(repo: str, issue_number: int) -> None:
     """Fecha uma issue."""
     _gh("issue", "close", str(issue_number), "--repo", repo)

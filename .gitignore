@@ -1,2 +1,3 @@
 .pipe/
 __pycache__/
+logs/
