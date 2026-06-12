@@ -88,14 +88,7 @@ def build_prompt(config: dict, task: dict) -> str:
 
     lines = []
 
-    # Cabeçalho de configuração
-    if model:
-        lines.append(f"/model {model}")
-    if effort:
-        lines.append(f"/effort {effort}")
-    lines.append(f"/context {task['path']}")
-    lines.append(f"/knowledge {task['history_path']}")
-    lines.append("")
+    # Cabeçalho
     lines.append("")
 
     # Etapa e tarefa
@@ -142,11 +135,13 @@ def _parse_credits(output: str) -> dict:
 
 
 def _agent_log_path(task: dict) -> Path:
-    """Retorna path do log: logs/<issue_id>/<board_id>-<col_id>-<agent>.log"""
+    """Retorna path do log: logs/<issue_id>/yyyyMMddHHmmss-<board_id>-<col_id>-<agent>.log"""
+    from datetime import datetime
     board_id = task["board_id"]
     col_id = task["column"]
     agent_name = task.get("_agent", "unknown")
-    return LOGS_DIR / str(task["id"]) / f"{board_id}-{col_id}-{agent_name}.log"
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    return LOGS_DIR / str(task["id"]) / f"{ts}-{board_id}-{col_id}-{agent_name}.log"
 
 
 def run_agent(config: dict, task: dict):
@@ -161,7 +156,21 @@ def run_agent(config: dict, task: dict):
 
     log.info("Executando agente '%s' para #%s...", agent_name, task["id"])
 
-    cmd = ["kiro-cli", "chat", "--agent", agent_name, "--no-interactive"]
+    cmd = ["kiro-cli", "chat", "--agent", agent_name, "--no-interactive", "-a"]
+
+    # Model na CLI
+    board = config["boards"][task["board_id"]]
+    column = board["columns"][task["column"]]
+    agent_cfg = _load_agent(column.get("agent", ""))
+    resolved_model = agent_cfg.get("model")
+    col_effort = column.get("effort") or agent_cfg.get("effort")
+    if column.get("allow-overwrite", False):
+        tag_effort = _parse_effort_tag(task["path"])
+        if tag_effort and tag_effort in config.get("effort", {}):
+            effort_map = config["effort"][tag_effort]
+            resolved_model = effort_map.get("model", resolved_model)
+    if resolved_model:
+        cmd += ["--model", resolved_model]
 
     try:
         result = subprocess.run(
