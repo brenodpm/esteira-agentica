@@ -39,6 +39,20 @@ def _resolve_merge_branch(config: dict, board: dict) -> str:
     return flow[flow_type].get("merge", flow.get("base", "main"))
 
 
+def _parse_effort_tag(task_path: str) -> str | None:
+    """Lê o arquivo da issue e extrai o valor da tag /effort se presente."""
+    p = Path(task_path)
+    if not p.exists():
+        return None
+    for line in p.read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("/effort"):
+            parts = stripped.split()
+            if len(parts) >= 2:
+                return parts[1]
+    return None
+
+
 def build_prompt(config: dict, task: dict) -> str:
     board_id = task["board_id"]
     board = config["boards"][board_id]
@@ -46,8 +60,19 @@ def build_prompt(config: dict, task: dict) -> str:
 
     agent_name = column.get("agent")
     agent = _load_agent(agent_name) if agent_name else {}
+
+    # Resolução de model/effort (precedência: agent → coluna → tag /effort)
     model = agent.get("model")
-    effort = column.get("effort")
+    effort = column.get("effort") or agent.get("effort")
+
+    # Se allow-overwrite, buscar tag /effort na issue
+    if column.get("allow-overwrite", False):
+        tag_effort = _parse_effort_tag(task["path"])
+        if tag_effort and tag_effort in config.get("effort", {}):
+            effort_map = config["effort"][tag_effort]
+            model = effort_map.get("model", model)
+            effort = effort_map.get("effort", effort)
+
     gitevents = column.get("gitevents", [])
 
     branch_name = _resolve_branch(config, task, board)

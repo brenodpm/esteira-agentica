@@ -21,6 +21,20 @@ Configurações globais do agente.
 | `pipe.agent.timeout`   | Tempo máximo (em segundos) que uma operação individual pode levar antes de ser cancelada. |
 | `pipe.agent.sleeptime` | Intervalo (em segundos) entre cada ciclo do loop principal.       |
 
+### effort
+
+Mapeamento global de níveis de effort para model e profundidade de raciocínio. Usado quando a issue sobrescreve o effort via tag `/effort`.
+
+| Campo             | Descrição                                                        |
+|-------------------|------------------------------------------------------------------|
+| `effort.<level>.model`  | Modelo a ser usado quando o nível for aplicado.             |
+| `effort.<level>.effort` | Profundidade de raciocínio (`low`, `medium`, `high`).       |
+
+Resolução de model/effort (ordem de precedência):
+1. `.kiro/agents/<name>.json` — valores padrão do agente
+2. `pipe.yml` coluna `effort` — sobrescreve o effort do agente
+3. Tag `/effort` na issue — sobrescreve model e effort usando o mapa `effort.<level>` (requer `allow-overwrite: true` na coluna)
+
 ### doc
 
 Caminho do diretório onde a documentação do projeto será armazenada pelos agentes.
@@ -75,6 +89,7 @@ Cada board possui um mapa de colunas. Cada coluna vira um subdiretório em `.pip
 | `git_commit`   | Se `true`, o agente faz commit das alterações produzidas.               |
 | `git_merge`    | Se `true`, a coluna envolve criação de PR ou merge para a branch destino do flow. |
 | `wait_children`| Se `true`, a issue fica parada até que todas as issues filhas estejam concluídas. |
+| `allow-overwrite` | Se `true`, permite que a tag `/effort` na issue sobrescreva model e effort da coluna. Padrão: `false`. |
 
 #### change
 

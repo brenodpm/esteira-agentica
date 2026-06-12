@@ -12,4 +12,5 @@ def load_config(path: str) -> dict:
         "boards_meta": {k: v for k, v in raw_boards.items() if k not in boards},
         "pipe": data.get("pipe", {}),
         "git": data.get("git", {}),
+        "effort": data.get("effort", {}),
     }

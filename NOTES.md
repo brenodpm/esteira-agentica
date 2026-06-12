@@ -26,6 +26,7 @@ Reescrita completa do projeto `esteira-agentica-ruim` com lógica nova.
 |-------------|-----------------------------------------------------------------------------------------------|
 | `effort`    | Nível de raciocínio do agente: `low`, `medium` ou `high`. Opcional, padrão `medium`. Níveis mais altos gastam mais tokens em análise profunda; níveis mais baixos produzem respostas mais rápidas. |
 | `gitevents` | Lista opcional de eventos git da coluna: `create` (cria branch conforme gitflow), `keep` (padrão — branch já existe e é mantida), `merge` (solicita merge request ao concluir). Aceita combinação de eventos. |
+| `allow-overwrite` | Se `true`, permite que a tag `/effort` na issue sobrescreva model e effort da coluna. Padrão: `false`. |
 
 ## Estrutura de Diretórios
 

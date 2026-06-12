@@ -3,6 +3,17 @@ pipe:
     timeout: 1800
     sleeptime: 30
 
+effort:
+  low:
+    model: claude-haiku-3.5
+    effort: low
+  medium:
+    model: claude-sonnet-4
+    effort: medium
+  high:
+    model: claude-sonnet-4
+    effort: high
+
 doc: docs/
 
 git:
