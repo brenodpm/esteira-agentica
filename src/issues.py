@@ -436,7 +436,6 @@ def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> int
 
             elif status == "b-sync":
                 _action_b_sync(issue, repo)
-                count += 1
 
             elif status == "b-mv":
                 _action_b_mv(issue, repo)
@@ -456,7 +455,6 @@ def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> int
 
             elif status == "l-sync":
                 _action_l_sync(issue, repo)
-                count += 1
 
             elif status == "l-new":
                 _action_l_new(issue, config, board_id, repo)
