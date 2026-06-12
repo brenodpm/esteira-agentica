@@ -18,7 +18,7 @@ def main():
     log.info("Loop iniciado")
     while True:
         try:
-            sync_issues(config)
+            synced = sync_issues(config)
             task = pick_task(config)
             if task == TODO_ADVANCE:
                 log.info("Auto-advance realizado — aguardando sync propagar")
@@ -27,7 +27,7 @@ def main():
                             task["id"], task.get("created_at", "?"), task["name"],
                             task["board_id"], task["column"])
                 run_agent(config, task)
-            else:
+            elif not synced:
                 log.info("Nenhuma tarefa elegível")
                 log.info("intervalo: %ds", sleeptime)
                 time.sleep(sleeptime)

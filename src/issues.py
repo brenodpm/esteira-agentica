@@ -134,8 +134,8 @@ def _should_full_sync(last_sync: str | None) -> bool:
         return True
 
 
-def sync_issues(config: dict) -> None:
-    """Loop principal de sincronização de issues."""
+def sync_issues(config: dict) -> bool:
+    """Loop principal de sincronização de issues. Retorna True se houve ações executadas."""
 
     log.info("Verificando movimentação de issues")
     snapshot = _load_snapshot()
@@ -157,16 +157,16 @@ def sync_issues(config: dict) -> None:
                 # Ainda precisa checar mudanças locais
                 _detect_local_changes(snapshot, config)
                 _save_snapshot(snapshot)
-                return
+                return False
 
         remote_items = fetch_board_items(config)
         created_at_map = fetch_issues_created_at(repo)
     except RateLimitError:
         log.warning("Rate limit — sync de issues adiado")
-        return
+        return False
     except GitHubError as e:
         log.error("Erro GitHub (issues): %s", e)
-        return
+        return False
 
     # Indexar remote por board_id -> {number: item}
     remote_by_board = {}
@@ -328,7 +328,7 @@ def sync_issues(config: dict) -> None:
             issues.append(entry)
 
     # === AÇÕES POR STATUS ===
-    _execute_actions(snapshot, config, remote_by_board)
+    synced = _execute_actions(snapshot, config, remote_by_board) > 0
 
     # Atualiza last_sync
     if full_sync:
@@ -338,6 +338,7 @@ def sync_issues(config: dict) -> None:
         snapshot["last_sync"] = _now_iso()
 
     _save_snapshot(snapshot)
+    return synced
 
 
 def _detect_local_changes(snapshot: dict, config: dict) -> None:
@@ -411,9 +412,10 @@ def _detect_local_changes(snapshot: dict, config: dict) -> None:
             })
 
 
-def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> None:
-    """Executa ações baseadas no status de cada issue."""
+def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> int:
+    """Executa ações baseadas no status de cada issue. Retorna quantidade de ações executadas."""
     repo = config["repo"]
+    count = 0
 
     for board_id, issues in list(snapshot.get("issues", {}).items()):
         to_remove = []
@@ -424,38 +426,48 @@ def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> Non
             if status == "b-new":
                 _action_b_new(issue, repo)
                 log.info("[%s] b-new #%s %s", board_id, issue["id"], issue["name"])
+                count += 1
 
             elif status == "b-del":
                 _action_b_del(issue)
                 log.info("[%s] b-del #%s", board_id, issue["id"])
                 to_remove.append(i)
+                count += 1
 
             elif status == "b-sync":
                 _action_b_sync(issue, repo)
+                count += 1
 
             elif status == "b-mv":
                 _action_b_mv(issue, repo)
                 log.info("[%s] b-mv #%s → %s", board_id, issue["id"], issue["column"])
+                count += 1
 
             elif status == "l-del":
                 _action_l_del(issue, config, board_id)
                 log.info("[%s] l-del #%s", board_id, issue["id"])
                 to_remove.append(i)
+                count += 1
 
             elif status == "l-mv":
                 _action_l_mv(issue, config, board_id)
                 log.info("[%s] l-mv #%s → %s", board_id, issue["id"], issue["column"])
+                count += 1
 
             elif status == "l-sync":
                 _action_l_sync(issue, repo)
+                count += 1
 
             elif status == "l-new":
                 _action_l_new(issue, config, board_id, repo)
                 log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
+                count += 1
 
         # Remove do snapshot
         for idx in reversed(to_remove):
             issues.pop(idx)
+
+    return count
 
 
 def _action_b_new(issue: dict, repo: str) -> None:
