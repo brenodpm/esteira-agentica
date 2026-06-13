@@ -169,8 +169,9 @@ def sync_issues(config: dict) -> bool:
             if not updated_numbers:
                 # Ainda precisa checar mudanças locais
                 _detect_local_changes(snapshot, config)
+                synced = _execute_actions(snapshot, config, {}) > 0
                 _save_snapshot(snapshot)
-                return False
+                return synced
 
         remote_items = fetch_board_items(config)
         created_at_map = fetch_issues_created_at(repo)
@@ -594,13 +595,19 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
 
     filepath = Path(issue["path"])
     body = ""
+    title = issue["name"]
     if filepath.exists():
         lines = filepath.read_text().splitlines()
+        # Extrai título real da primeira linha (# Titulo)
+        if lines and lines[0].startswith("# "):
+            title = lines[0][2:].strip()
         # Pula a primeira linha (# titulo) e linha vazia
         body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
 
+    issue["name"] = title
+
     # Deduplicação: verificar se issue com mesmo slug já existe no snapshot
-    slug = _slugify(issue["name"])
+    slug = _slugify(title)
     for board_issues in _load_snapshot().get("issues", {}).values():
         for other in board_issues:
             if other is not issue and other["id"] and _slugify(other["name"]) == slug:
@@ -618,7 +625,10 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
 
     # Move para coluna correta no board
     col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
-    move_card(config, number, board_id, col_name)
+    try:
+        move_card(config, number, board_id, col_name)
+    except Exception as e:
+        log.warning("Falha ao mover issue #%s no board: %s", number, e)
 
     # Apaga arquivo original e recria com padrão
     if filepath.exists():
