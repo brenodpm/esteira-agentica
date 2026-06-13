@@ -3,7 +3,7 @@ import time
 from src.config import load_config
 from src.log import log, cleanup_logs
 from src.sync import sync
-from src.issues import sync_issues
+from src.issues import sync_issues, fix_issues
 from src.pick_task import pick_task, TODO_ADVANCE
 from src.agent import run_agent
 from src.github import RateLimitError, GitHubError
@@ -18,6 +18,7 @@ def main():
     log.info("Loop iniciado")
     while True:
         try:
+            fix_issues()
             synced = sync_issues(config)
             task = pick_task(config)
             if task == TODO_ADVANCE:

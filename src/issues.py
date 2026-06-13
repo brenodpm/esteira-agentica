@@ -134,6 +134,19 @@ def _should_full_sync(last_sync: str | None) -> bool:
         return True
 
 
+def fix_issues() -> None:
+    """Corrige defeitos no snapshot: issues com id=0 e status!=l-new voltam para l-new."""
+    snapshot = _load_snapshot()
+    changed = False
+    for issues in snapshot.get("issues", {}).values():
+        for issue in issues:
+            if issue["id"] == 0 and issue["status"] != "l-new":
+                issue["status"] = "l-new"
+                changed = True
+    if changed:
+        _save_snapshot(snapshot)
+
+
 def sync_issues(config: dict) -> bool:
     """Loop principal de sincronização de issues. Retorna True se houve ações executadas."""
 
@@ -586,7 +599,16 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
         # Pula a primeira linha (# titulo) e linha vazia
         body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
 
-    # Deduplicação: verificar se issue com mesmo título já existe
+    # Deduplicação: verificar se issue com mesmo slug já existe no snapshot
+    slug = _slugify(issue["name"])
+    for board_issues in _load_snapshot().get("issues", {}).values():
+        for other in board_issues:
+            if other is not issue and other["id"] and _slugify(other["name"]) == slug:
+                issue["id"] = other["id"]
+                issue["status"] = "ok"
+                return
+
+    # Deduplicação: verificar se issue com mesmo título já existe no GitHub
     existing = find_issue_by_title(repo, issue["name"])
     if existing:
         number = existing
