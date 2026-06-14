@@ -33,7 +33,8 @@ def main():
                 log.info("intervalo: %ds", sleeptime)
                 time.sleep(sleeptime)
         except RateLimitError:
-            log.warning("Rate limit — aguardando próximo ciclo")
+            log.warning("Rate limit — aguardando %ds", sleeptime)
+            time.sleep(sleeptime)
         except GitHubError as e:
             log.error("Erro GitHub: %s", e)
         except Exception as e:
