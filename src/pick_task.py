@@ -1,6 +1,7 @@
 """Seleção de tarefa elegível por ciclo."""
 
 import json
+import re
 from pathlib import Path
 
 from src.log import log
@@ -51,6 +52,24 @@ def _advance_from_todo(issue: dict, board_id: str, board: dict) -> bool:
     return True
 
 
+def _is_blocked(issue: dict, issues_map: dict) -> bool:
+    """Retorna True se a issue tem /blocked_by apontando para issue não concluída."""
+    path = Path(issue["path"])
+    if not path.exists():
+        return False
+    content = path.read_text()
+    blockers = re.findall(r"/blocked_by\s+(\d+)", content)
+    if not blockers:
+        return False
+    for blocker_id in blockers:
+        bid = int(blocker_id)
+        for board_issues in issues_map.values():
+            for other in board_issues:
+                if other["id"] == bid and other["column"] != "concluido":
+                    return True
+    return False
+
+
 def pick_task(config: dict) -> dict | str | None:
     """Retorna a primeira issue elegível, TODO_ADVANCE se houve auto-advance, ou None.
 
@@ -87,6 +106,8 @@ def pick_task(config: dict) -> dict | str | None:
                 continue
             change = col.get("change", {})
             if not change.get("advance"):
+                continue
+            if _is_blocked(issue, issues_map):
                 continue
             return {"board_id": board_id, **issue}
 
