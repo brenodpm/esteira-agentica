@@ -7,7 +7,7 @@ ttl-log: 10
 
 effort:
   low:
-    model: claude-haiku-3.5
+    model: claude-haiku-4.5
     effort: low
   medium:
     model: claude-sonnet-4
