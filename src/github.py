@@ -2,8 +2,20 @@
 
 import json
 import subprocess
+import time
 
 from src.log import log
+
+_last_mutation_time = 0.0
+
+
+def _mutation_throttle():
+    """Garante 1s de intervalo entre mutations consecutivas."""
+    global _last_mutation_time
+    elapsed = time.time() - _last_mutation_time
+    if elapsed < 1.0:
+        time.sleep(1.0 - elapsed)
+    _last_mutation_time = time.time()
 
 
 class GitHubError(Exception):
@@ -79,6 +91,7 @@ def _get_status_field(project_id: str) -> dict | None:
 
 
 def _create_project(owner_id: str, title: str) -> dict:
+    _mutation_throttle()
     data = _gql(
         "mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id number title}}}",
         ownerId=owner_id,
@@ -88,6 +101,7 @@ def _create_project(owner_id: str, title: str) -> dict:
 
 
 def _add_status_options(field_id: str, all_options: list[str]) -> None:
+    _mutation_throttle()
     opts = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in all_options) + "]"
     _gql(
         f'mutation($fid:ID!){{updateProjectV2Field(input:{{fieldId:$fid,singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
@@ -95,35 +109,109 @@ def _add_status_options(field_id: str, all_options: list[str]) -> None:
     )
 
 
-def fetch_board_items(config: dict) -> dict[str, list[dict]]:
-    """Busca items de todos os boards."""
+def resolve_project_metadata(config: dict, board_id: str, cache: dict) -> dict:
+    """Resolve project_id, status_field_id e options usando cache.
+
+    Retorna dict com: project_id, project_number, status_field_id, options.
+    Se cache válido: 0 chamadas. Se não: 2 chamadas (list_projects + get_status_field).
+    Atualiza o cache in-place.
+    """
+    board_cache = cache.get(board_id)
+    if board_cache and board_cache.get("project_id") and board_cache.get("status_field_id"):
+        return board_cache
+
     owner = config["repo"].split("/")[0]
     _, owner_type = _resolve_owner(owner)
     projects = _list_projects(owner, owner_type)
-    projects_by_title = {p["title"]: p for p in projects}
 
-    result = {}
-    for board_id, board in config["boards"].items():
-        board_name = board.get("name", board_id)
-        project = projects_by_title.get(board_name)
-        if not project:
-            result[board_id] = []
-            continue
-        out = _gh("project", "item-list", str(project["number"]),
-                  "--owner", owner, "--format", "json", "--limit", "200")
-        data = json.loads(out)
-        items = []
-        for item in data.get("items", []):
-            content = item.get("content", {})
-            if content.get("type") != "Issue":
+    board_name = config["boards"][board_id].get("name", board_id)
+    project = next((p for p in projects if p["title"] == board_name), None)
+    if not project:
+        raise GitHubError(f"Project '{board_name}' não encontrado")
+
+    status_field = _get_status_field(project["id"])
+    if not status_field:
+        raise GitHubError(f"Campo Status não encontrado no project '{board_name}'")
+
+    board_cache = {
+        "project_id": project["id"],
+        "project_number": project["number"],
+        "status_field_id": status_field["id"],
+        "options": {o["name"]: o["id"] for o in status_field.get("options", [])},
+        "items": cache.get(board_id, {}).get("items", {}),
+    }
+    cache[board_id] = board_cache
+    return board_cache
+
+
+def fetch_board_items_graphql(project_id: str) -> list[dict]:
+    """Busca todos os items de um project via GraphQL única.
+
+    Retorna lista de dicts com: item_id, number, title, url, status, updated_at.
+    Substitui gh project item-list (REST) por 1 query GraphQL.
+    """
+    query = """query($pid:ID!,$cursor:String){
+      node(id:$pid){...on ProjectV2{
+        items(first:100,after:$cursor){
+          pageInfo{hasNextPage endCursor}
+          nodes{
+            id
+            fieldValues(first:10){nodes{...on ProjectV2ItemFieldSingleSelectValue{field{...on ProjectV2SingleSelectField{name}} name}}}
+            content{...on Issue{number title url updatedAt body}}
+          }
+        }
+      }}
+    }"""
+    items = []
+    cursor = ""
+    while True:
+        variables = {"pid": project_id}
+        if cursor:
+            variables["cursor"] = cursor
+        data = _gql(query, **variables)
+        node = data.get("node", {})
+        page = node.get("items", {})
+        for item in page.get("nodes", []):
+            content = item.get("content")
+            if not content or not content.get("number"):
                 continue
+            status_name = ""
+            for fv in item.get("fieldValues", {}).get("nodes", []):
+                if fv.get("field", {}).get("name") == "Status":
+                    status_name = fv.get("name", "")
+                    break
             items.append({
+                "item_id": item["id"],
                 "number": content["number"],
                 "title": content["title"],
-                "body": content.get("body", ""),
-                "status": item.get("status", ""),
                 "url": content.get("url", ""),
+                "body": content.get("body", ""),
+                "status": status_name,
+                "updated_at": content.get("updatedAt", ""),
             })
+        page_info = page.get("pageInfo", {})
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info["endCursor"]
+    return items
+
+
+def fetch_board_items(config: dict, cache: dict = None) -> dict[str, list[dict]]:
+    """Busca items de todos os boards usando GraphQL e cache."""
+    if cache is None:
+        cache = {}
+    result = {}
+    for board_id in config["boards"]:
+        try:
+            meta = resolve_project_metadata(config, board_id, cache)
+        except GitHubError:
+            result[board_id] = []
+            continue
+        items = fetch_board_items_graphql(meta["project_id"])
+        # Atualizar cache de items
+        items_cache = meta.setdefault("items", {})
+        for item in items:
+            items_cache[str(item["number"])] = item["item_id"]
         result[board_id] = items
     return result
 
@@ -181,6 +269,41 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
                 _add_status_options(status["id"], all_opts)
 
 
+def add_issue_to_project(config: dict, board_id: str, issue_node_id: str, cache: dict = None) -> str:
+    """Adiciona issue ao project via addProjectV2ItemById (idempotente).
+
+    Retorna item_id. Atualiza cache se fornecido.
+    """
+    if cache is None:
+        cache = {}
+    meta = resolve_project_metadata(config, board_id, cache)
+    project_id = meta["project_id"]
+
+    _mutation_throttle()
+    data = _gql(
+        "mutation($pid:ID!,$nid:ID!){addProjectV2ItemById(input:{projectId:$pid,contentId:$nid}){item{id}}}",
+        pid=project_id,
+        nid=issue_node_id,
+    )
+    item_id = data["addProjectV2ItemById"]["item"]["id"]
+
+    # Cachear — precisa do issue_number, extrair do node_id é impraticável
+    # O caller deve cachear com o number correto
+    return item_id
+
+
+def get_issue_node_id(repo: str, issue_number: int) -> str:
+    """Busca node_id (global ID) de uma issue via GraphQL."""
+    owner, name = repo.split("/")
+    data = _gql(
+        "query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){issue(number:$num){id}}}",
+        owner=owner,
+        name=name,
+        num=str(issue_number),
+    )
+    return data["repository"]["issue"]["id"]
+
+
 # ── Ações local → GitHub ──────────────────────────────────────────────────────
 
 
@@ -217,61 +340,39 @@ def post_comment(repo: str, issue_number: int, body: str) -> None:
     _gh("issue", "comment", str(issue_number), "--repo", repo, "--body", body)
 
 
-def move_card(config: dict, issue_number: int, board_id: str, col_name: str) -> None:
-    """Move issue para coluna no project board."""
-    owner = config["repo"].split("/")[0]
-    repo = config["repo"]
-    _, owner_type = _resolve_owner(owner)
-    projects = _list_projects(owner, owner_type)
+def move_card(config: dict, issue_number: int, board_id: str, col_name: str, cache: dict = None) -> None:
+    """Move issue para coluna no project board.
 
-    board_name = config["boards"][board_id].get("name", board_id)
-    project = next((p for p in projects if p["title"] == board_name), None)
-    if not project:
-        raise GitHubError(f"Project '{board_name}' não encontrado")
+    Com cache: 1 mutation (updateProjectV2ItemFieldValue).
+    Sem cache/item_id: addProjectV2ItemById + mutation.
+    """
+    if cache and cache.get(board_id):
+        meta = cache[board_id]
+    else:
+        if cache is None:
+            cache = {}
+        meta = resolve_project_metadata(config, board_id, cache)
 
-    project_number = str(project["number"])
-    project_id = project["id"]
-    issue_url = f"https://github.com/{repo}/issues/{issue_number}"
-
-    # Busca item no project
-    out = _gh("project", "item-list", project_number,
-              "--owner", owner, "--format", "json", "--limit", "200")
-    items = json.loads(out).get("items", [])
-    item_id = None
-    for item in items:
-        content = item.get("content", {})
-        if content.get("url") == issue_url:
-            item_id = item["id"]
-            break
-
-    # Se não está no project, adiciona
-    if not item_id:
-        _gh("project", "item-add", project_number, "--owner", owner, "--url", issue_url)
-        out = _gh("project", "item-list", project_number,
-                  "--owner", owner, "--format", "json", "--limit", "200")
-        items = json.loads(out).get("items", [])
-        for item in items:
-            content = item.get("content", {})
-            if content.get("url") == issue_url:
-                item_id = item["id"]
-                break
-
-    if not item_id:
-        raise GitHubError(f"Não foi possível adicionar issue #{issue_number} ao project")
-
-    # Busca campo Status e opção
-    status_field = _get_status_field(project_id)
-    if not status_field:
-        raise GitHubError("Campo Status não encontrado no project")
-
-    option = next((o for o in status_field.get("options", []) if o["name"] == col_name), None)
-    if not option:
+    project_id = meta["project_id"]
+    field_id = meta["status_field_id"]
+    option_id = meta["options"].get(col_name)
+    if not option_id:
         raise GitHubError(f"Coluna '{col_name}' não encontrada no project")
 
+    items_cache = meta.setdefault("items", {})
+    item_id = items_cache.get(str(issue_number))
+
+    if not item_id:
+        # Precisa adicionar ao project ou buscar item_id
+        repo = config["repo"]
+        node_id = get_issue_node_id(repo, issue_number)
+        item_id = add_issue_to_project(config, board_id, node_id, cache)
+
+    _mutation_throttle()
     _gql(
         "mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!){updateProjectV2ItemFieldValue(input:{projectId:$pid,itemId:$iid,fieldId:$fid,value:{singleSelectOptionId:$oid}}){projectV2Item{id}}}",
         pid=project_id,
         iid=item_id,
-        fid=status_field["id"],
-        oid=option["id"],
+        fid=field_id,
+        oid=option_id,
     )

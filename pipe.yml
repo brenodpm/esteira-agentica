@@ -59,6 +59,8 @@ git:
 boards:
   bugs: bug
   needs: debito
+  create-remote-boards: false
+  allow-del-remote-issue: false
 
   # ──────────────────────────────────────────────
   # EPIC — ciclo completo de um épico
@@ -305,7 +307,7 @@ boards:
         desc: "Débito abeto para o agente product"
         agent: product
         gitevents: [create, merge]
-        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write";
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: requirements
           concluido: concluido
@@ -315,7 +317,7 @@ boards:
         desc: "Débito abeto para o agente requirements"
         agent: requirements
         gitevents: [create, merge]
-        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write";
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: architecture
           concluido: concluido
@@ -325,7 +327,7 @@ boards:
         desc: "Débito abeto para o agente architecture"
         agent: architecture
         gitevents: [create, merge]
-        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write";
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: engineering
           concluido: concluido
@@ -335,7 +337,7 @@ boards:
         desc: "Débito abeto para o agente engineering"
         agent: engineering
         gitevents: [create, merge]
-        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write";
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: quality
           concluido: concluido
@@ -345,7 +347,7 @@ boards:
         desc: "Débito abeto para o agente quality"
         agent: quality
         gitevents: [create, merge]
-        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write";
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: concluido
           cancelar: cancelado

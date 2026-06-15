@@ -38,7 +38,7 @@ def _advance_from_todo(issue: dict, board_id: str, board: dict) -> bool:
         issue[key] = str(new)
 
     issue["column"] = advance_col
-    issue["status"] = "l-mv"
+    issue["status"] = "l-sync"
 
     # Persiste no snapshot
     snapshot = json.loads(SNAPSHOT_FILE.read_text())

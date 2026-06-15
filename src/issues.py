@@ -3,12 +3,14 @@
 import json
 import re
 import unicodedata
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.github import (
     fetch_board_items, fetch_issue_comments, fetch_updated_issues,
-    fetch_issues_created_at,
+    fetch_board_items_graphql, resolve_project_metadata,
+    create_issue, move_card, close_issue, update_issue_body,
+    post_comment, get_issue_node_id, add_issue_to_project,
     GitHubError, RateLimitError,
 )
 from src.log import log
@@ -50,6 +52,18 @@ def _col_name_to_id(config: dict, board_id: str) -> dict[str, str]:
     }
 
 
+def _col_id_to_name(config: dict, board_id: str) -> dict[str, str]:
+    return {
+        col_id: col.get("name", col_id)
+        for col_id, col in config["boards"][board_id]["columns"].items()
+    }
+
+
+def _col_from_path(path: Path) -> str:
+    """Extrai col_id do path: .pipe/boards/<board>/<col>/file.md"""
+    return path.parent.name
+
+
 def _build_history(repo: str, issue_number: int) -> tuple[str, str]:
     try:
         data = fetch_issue_comments(repo, issue_number)
@@ -66,21 +80,6 @@ def _build_history(repo: str, issue_number: int) -> tuple[str, str]:
         lines.append("--------")
         lines.append("")
     return "\n".join(lines), updated_at
-
-
-def _find_file_in_boards(board_id: str, issue_id: int) -> Path | None:
-    """Procura o arquivo slug de uma issue em qualquer coluna do board."""
-    board_path = BOARDS_DIR / board_id
-    if not board_path.exists():
-        return None
-    prefix = f"{issue_id}-"
-    for col_dir in board_path.iterdir():
-        if not col_dir.is_dir():
-            continue
-        for f in col_dir.iterdir():
-            if f.name.startswith(prefix) and not f.name.endswith(("-history.md", "-write.md")):
-                return f
-    return None
 
 
 def _scan_local_files(board_id: str) -> dict[int, Path]:
@@ -100,541 +99,234 @@ def _scan_local_files(board_id: str) -> dict[int, Path]:
     return result
 
 
-def _col_from_path(path: Path) -> str:
-    """Extrai col_id do path: .pipe/boards/<board>/<col>/file.md"""
-    return path.parent.name
+# ══════════════════════════════════════════════════════════════════════════════
+# ETAPA 1: Local → Snapshot (detecção de mudanças locais)
+# ══════════════════════════════════════════════════════════════════════════════
 
 
-def _handle_orphan_files(issue: dict, new_col_path: Path, repo: str) -> None:
-    """Limpa history/write órfãos no diretório anterior quando slug foi movido."""
-    old_history = Path(issue["history_path"])
-    old_write = Path(issue["write_path"])
-
-    # Se history ficou no dir anterior, remove
-    if old_history.exists() and old_history.parent != new_col_path:
-        old_history.unlink()
-
-    # Se write ficou no dir anterior, posta conteúdo e remove
-    if old_write.exists() and old_write.parent != new_col_path:
-        content = old_write.read_text().strip()
-        if content:
-            log.info("Write órfão issue #%s — pendente postar comentário", issue['id'])
-        old_write.unlink()
-
-
-def _should_full_sync(last_sync: str | None) -> bool:
-    """Retorna True se last_sync é do dia anterior ou mais antigo."""
-    if not last_sync:
-        return True
-    try:
-        last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
-        return last_dt.date() < now.date()
-    except (ValueError, AttributeError):
-        return True
-
-
-def fix_issues() -> None:
-    """Corrige defeitos no snapshot: issues com id=0 e status!=l-new voltam para l-new."""
-    snapshot = _load_snapshot()
-    changed = False
-    for issues in snapshot.get("issues", {}).values():
-        for issue in issues:
-            if issue["id"] == 0 and issue["status"] != "l-new":
-                issue["status"] = "l-new"
-                changed = True
-    if changed:
-        _save_snapshot(snapshot)
-
-
-def sync_issues(config: dict) -> bool:
-    """Loop principal de sincronização de issues. Retorna True se houve ações executadas."""
-
-    log.info("Verificando movimentação de issues")
-    snapshot = _load_snapshot()
-    if "issues" not in snapshot:
-        snapshot["issues"] = {}
-
-    repo = config["repo"]
-    last_sync = snapshot.get("last_sync")
-
-    # Determina se precisa full sync
-    full_sync = _should_full_sync(last_sync)
-
-    try:
-        if full_sync:
-            updated_numbers = None
-        else:
-            updated_numbers = set(fetch_updated_issues(repo, last_sync))
-            if not updated_numbers:
-                # Ainda precisa checar mudanças locais
-                _detect_local_changes(snapshot, config)
-                synced = _execute_actions(snapshot, config, {}) > 0
-                _save_snapshot(snapshot)
-                return synced
-
-        remote_items = fetch_board_items(config)
-        created_at_map = fetch_issues_created_at(repo)
-    except RateLimitError:
-        log.warning("Rate limit — sync de issues adiado")
-        return False
-    except GitHubError as e:
-        log.error("Erro GitHub (issues): %s", e)
-        return False
-
-    # Indexar remote por board_id -> {number: item}
-    remote_by_board = {}
-    for board_id, items in remote_items.items():
-        name_to_id = _col_name_to_id(config, board_id)
-        remote_by_board[board_id] = {}
-        for item in items:
-            col_id = name_to_id.get(item["status"])
-            if col_id:
-                remote_by_board[board_id][item["number"]] = {**item, "col_id": col_id}
-
-    # === DETECÇÃO DE MUDANÇAS ===
-    for board_id in list(config["boards"].keys()):
-        if board_id not in snapshot["issues"]:
-            snapshot["issues"][board_id] = []
-
-        issues = snapshot["issues"][board_id]
-        remote = remote_by_board.get(board_id, {})
+def _etapa1_local_para_snapshot(snapshot: dict, config: dict) -> None:
+    """Vasculha diretórios e atualiza status no snapshot."""
+    for board_id in config["boards"]:
+        issues = snapshot.setdefault("issues", {}).setdefault(board_id, [])
         local_files = _scan_local_files(board_id)
-
-        # Processar issues existentes no snapshot
-        for issue in issues:
-            if issue["status"] in ("b-new", "l-new"):
-                continue  # será tratado na fase de ações
-
-            number = issue["id"]
-
-            # QUANDO issue no snapshot mas não no board
-            if number and number not in remote:
-                issue["b-time"] = _now_iso()
-                issue["status"] = "b-del"
-                continue
-
-            # QUANDO issue no snapshot mas não no diretório
-            if number in local_files:
-                local_path = local_files[number]
-            else:
-                local_path = None
-
-            if not local_path and not Path(issue["path"]).exists():
-                issue["l-time"] = _now_iso()
-                issue["status"] = "l-del"
-                continue
-
-            if local_path:
-                current_col = _col_from_path(local_path)
-                # QUANDO coluna local diferente do snapshot
-                if current_col != issue["column"]:
-                    new_col_path = local_path.parent
-                    _handle_orphan_files(issue, new_col_path, repo)
-                    slug = local_path.stem
-                    issue["l-time"] = str(local_path.stat().st_mtime)
-                    issue["path"] = str(local_path)
-                    issue["history_path"] = str(new_col_path / f"{slug}-history.md")
-                    issue["write_path"] = str(new_col_path / f"{slug}-write.md")
-                    issue["status"] = "l-mv"
-                    continue
-
-                # QUANDO mtime do slug ou write > l-time
-                file_mtime = str(local_path.stat().st_mtime)
-                write_path = Path(issue["write_path"])
-                write_mtime = str(write_path.stat().st_mtime) if write_path.exists() else "0"
-                latest_mtime = max(file_mtime, write_mtime)
-
-                if issue["l-time"] and latest_mtime > issue["l-time"]:
-                    issue["l-time"] = latest_mtime
-                    issue["status"] = "l-sync"
-                    continue
-
-            # QUANDO b-time do board diferente do snapshot
-            if number and number in remote:
-                remote_item = remote[number]
-                remote_col = remote_item["col_id"]
-
-                # QUANDO coluna no board diferente do snapshot (b-mv)
-                if issue["status"] == "ok" and remote_col != issue["column"]:
-                    issue["column"] = remote_col
-                    issue["b-time"] = _now_iso()
-                    issue["status"] = "b-mv"
-                    continue
-
-            # Checagem de b-time precisa do updatedAt (caro, só se updated_numbers indica)
-            if updated_numbers and number in updated_numbers:
-                issue["status"] = "b-sync"
-                issue["b-time"] = _now_iso()
-
-        # QUANDO arquivo no diretório mas não no snapshot
         snapshot_ids = {i["id"] for i in issues}
-        snapshot_paths = {i["path"] for i in issues}
-        for file_id, file_path in local_files.items():
-            if file_id in snapshot_ids:
-                continue
-            if str(file_path) in snapshot_paths:
-                continue
 
-            # Se já existe no remote, é reconciliação (não é l-new)
-            if file_id in remote:
-                remote_item = remote[file_id]
-                col_id = _col_from_path(file_path)
-                slug = file_path.stem
-                status = "ok" if col_id == remote_item["col_id"] else "l-mv"
-                entry = {
-                    "id": file_id,
-                    "name": _sanitize_name(remote_item["title"]),
-                    "column": col_id,
-                    "path": str(file_path),
-                    "history_path": str(file_path.parent / f"{slug}-history.md"),
-                    "write_path": str(file_path.parent / f"{slug}-write.md"),
-                    "l-time": str(file_path.stat().st_mtime),
-                    "b-time": _now_iso(),
-                    "created_at": created_at_map.get(file_id, ""),
-                    "status": status,
-                }
-                issues.append(entry)
-                continue
-
-            # Issue nova local (não existe no remote)
-            # Se o arquivo já tem ID numérico, é reconciliação (issue já existe no GitHub)
-            if file_id is not None:
-                col_id = _col_from_path(file_path)
-                slug = file_path.stem
-                entry = {
-                    "id": file_id,
-                    "name": _sanitize_name(file_path.stem.split("-", 1)[1]) if "-" in file_path.stem else file_path.stem,
-                    "column": col_id,
-                    "path": str(file_path),
-                    "history_path": str(file_path.parent / f"{slug}-history.md"),
-                    "write_path": str(file_path.parent / f"{slug}-write.md"),
-                    "l-time": str(file_path.stat().st_mtime),
-                    "b-time": _now_iso(),
-                    "created_at": created_at_map.get(file_id, ""),
-                    "status": "ok",
-                }
-                issues.append(entry)
-                continue
-
-        # QUANDO issues novas vindo do board (não estão no snapshot)
-        current_ids = {i["id"] for i in issues}
-        for number, remote_item in remote.items():
-            if number in current_ids:
-                continue
-
-            slug = _slugify(remote_item["title"])
-            base = f"{number}-{slug}"
-            col_path = BOARDS_DIR / board_id / remote_item["col_id"]
-
-            entry = {
-                "id": number,
-                "name": _sanitize_name(remote_item["title"]),
-                "column": remote_item["col_id"],
-                "path": str(col_path / f"{base}.md"),
-                "history_path": str(col_path / f"{base}-history.md"),
-                "write_path": str(col_path / f"{base}-write.md"),
-                "l-time": None,
-                "b-time": None,
-                "created_at": created_at_map.get(number, ""),
-                "status": "b-new",
-            }
-            issues.append(entry)
-
-    # === AÇÕES POR STATUS ===
-    synced = _execute_actions(snapshot, config, remote_by_board) > 0
-
-    # Atualiza last_sync
-    if full_sync:
-        today_midnight = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        snapshot["last_sync"] = today_midnight.strftime("%Y-%m-%dT%H:%M:%SZ")
-    else:
-        snapshot["last_sync"] = _now_iso()
-
-    _save_snapshot(snapshot)
-    return synced
-
-
-def _detect_local_changes(snapshot: dict, config: dict) -> None:
-    """Detecta mudanças locais mesmo sem issues modificadas no board."""
-    for board_id in list(config["boards"].keys()):
-        if board_id not in snapshot["issues"]:
-            snapshot["issues"][board_id] = []
-
-        issues = snapshot["issues"][board_id]
-        local_files = _scan_local_files(board_id)
-
+        # Para cada issue existente no snapshot
         for issue in issues:
-            if issue["status"] != "ok":
+            if issue["status"] in ("b-new", "l-new", "b-del"):
                 continue
 
             number = issue["id"]
             local_path = local_files.get(number)
 
+            # Existe no snapshot mas não local → l-del
             if not local_path and not Path(issue["path"]).exists():
-                issue["l-time"] = _now_iso()
-                issue["status"] = "l-del"
+                if issue["status"] == "ok":
+                    issue["status"] = "l-del"
+                    log.debug("[%s] #%s detectado l-del (arquivo removido)", board_id, number)
                 continue
 
-            if local_path:
-                current_col = _col_from_path(local_path)
-                if current_col != issue["column"]:
-                    new_col_path = local_path.parent
-                    _handle_orphan_files(issue, new_col_path, "")
-                    slug = local_path.stem
-                    issue["l-time"] = str(local_path.stat().st_mtime)
-                    issue["path"] = str(local_path)
-                    issue["history_path"] = str(new_col_path / f"{slug}-history.md")
-                    issue["write_path"] = str(new_col_path / f"{slug}-write.md")
-                    issue["status"] = "l-mv"
-                    continue
+            if not local_path:
+                continue
 
-                file_mtime = str(local_path.stat().st_mtime)
-                write_path = Path(issue["write_path"])
-                write_mtime = str(write_path.stat().st_mtime) if write_path.exists() else "0"
-                latest_mtime = max(file_mtime, write_mtime)
+            current_col = _col_from_path(local_path)
 
-                if issue["l-time"] and latest_mtime > issue["l-time"]:
-                    issue["l-time"] = latest_mtime
-                    issue["status"] = "l-sync"
+            # Coluna diferente → l-sync + atualizar paths
+            if current_col != issue["column"]:
+                log.debug("[%s] #%s detectado l-sync (movido %s → %s)", board_id, number, issue["column"], current_col)
+                _handle_move(issue, local_path)
+                continue
 
-        # Novos arquivos locais
-        snapshot_ids = {i["id"] for i in issues}
-        snapshot_paths = {i["path"] for i in issues}
+            # Mtime mais novo → l-sync
+            file_mtime = str(local_path.stat().st_mtime)
+            write_path = Path(issue["write_path"])
+            write_mtime = str(write_path.stat().st_mtime) if write_path.exists() else "0"
+            latest_mtime = max(file_mtime, write_mtime)
+
+            if issue["l-time"] and latest_mtime > issue["l-time"]:
+                issue["l-time"] = latest_mtime
+                issue["status"] = "l-sync"
+                log.debug("[%s] #%s detectado l-sync (arquivo modificado)", board_id, number)
+
+        # Arquivos locais sem entrada no snapshot → l-new
         for file_id, file_path in local_files.items():
             if file_id in snapshot_ids:
                 continue
-            if str(file_path) in snapshot_paths:
-                continue
+            col_id = _col_from_path(file_path)
+            slug = file_path.stem
             first_line = ""
             try:
                 first_line = file_path.read_text().splitlines()[0].lstrip("# ").strip()
             except (IndexError, OSError):
-                first_line = file_path.stem
-            col_id = _col_from_path(file_path)
+                first_line = slug.split("-", 1)[1] if "-" in slug else slug
             issues.append({
-                "id": None,
+                "id": file_id,
                 "name": _sanitize_name(first_line),
                 "column": col_id,
                 "path": str(file_path),
-                "history_path": str(file_path.parent / f"{file_path.stem}-history.md"),
-                "write_path": str(file_path.parent / f"{file_path.stem}-write.md"),
+                "history_path": str(file_path.parent / f"{slug}-history.md"),
+                "write_path": str(file_path.parent / f"{slug}-write.md"),
                 "l-time": str(file_path.stat().st_mtime),
                 "b-time": None,
                 "created_at": _now_iso(),
                 "status": "l-new",
             })
+            log.debug("[%s] #%s detectado l-new (%s)", board_id, file_id, file_path.name)
+            snapshot_ids.add(file_id)
 
 
-def _execute_actions(snapshot: dict, config: dict, remote_by_board: dict) -> int:
-    """Executa ações baseadas no status de cada issue. Retorna quantidade de ações executadas."""
+def _handle_move(issue: dict, local_path: Path) -> None:
+    """Trata movimentação local: atualiza paths, cuida de órfãos."""
+    new_col_path = local_path.parent
+    slug = local_path.stem
+
+    # Tratar órfãos
+    old_history = Path(issue["history_path"])
+    old_write = Path(issue["write_path"])
+
+    if old_history.exists() and old_history.parent != new_col_path:
+        old_history.unlink()
+
+    if old_write.exists() and old_write.parent != new_col_path:
+        new_write = new_col_path / f"{slug}-write.md"
+        old_content = old_write.read_text().strip()
+        if new_write.exists() and old_content:
+            # Mesclar
+            existing = new_write.read_text().strip()
+            merged = f"{existing}\n\n{old_content}" if existing else old_content
+            new_write.write_text(merged)
+        elif old_content:
+            new_write.write_text(old_content)
+        old_write.unlink()
+
+    issue["column"] = _col_from_path(local_path)
+    issue["path"] = str(local_path)
+    issue["history_path"] = str(new_col_path / f"{slug}-history.md")
+    issue["write_path"] = str(new_col_path / f"{slug}-write.md")
+    issue["l-time"] = str(local_path.stat().st_mtime)
+    issue["status"] = "l-sync"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ETAPA 2: Snapshot → GitHub (propagar mudanças locais)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _etapa2_snapshot_para_github(snapshot: dict, config: dict) -> int:
+    """Propaga mudanças locais para o GitHub. Retorna quantidade de ações."""
     repo = config["repo"]
+    cache = snapshot.setdefault("cache", {})
     count = 0
 
-    for board_id, issues in list(snapshot.get("issues", {}).items()):
+    for board_id, issues in snapshot.get("issues", {}).items():
         to_remove = []
+        col_id_to_name = _col_id_to_name(config, board_id)
 
         for i, issue in enumerate(issues):
-            status = issue["status"]
+            try:
+                if issue["status"] == "l-sync":
+                    _action_l_sync(issue, config, board_id, cache)
+                    log.info("[%s] l-sync #%s → %s", board_id, issue["id"], issue["column"])
+                    count += 1
 
-            if status == "b-new":
-                _action_b_new(issue, repo)
-                log.info("[%s] b-new #%s %s", board_id, issue["id"], issue["name"])
-                count += 1
+                elif issue["status"] == "l-new":
+                    _action_l_new(issue, config, board_id, cache)
+                    log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
+                    count += 1
 
-            elif status == "b-del":
-                _action_b_del(issue)
-                log.info("[%s] b-del #%s", board_id, issue["id"])
-                to_remove.append(i)
-                count += 1
+                elif issue["status"] == "l-del":
+                    allow_del = config["boards_meta"].get("allow-del-remote-issue", False)
+                    _action_l_del(issue, config, board_id, allow_del)
+                    log.info("[%s] l-del #%s", board_id, issue["id"])
+                    to_remove.append(i)
+                    count += 1
 
-            elif status == "b-sync":
-                _action_b_sync(issue, repo)
+            except RateLimitError:
+                log.warning("Rate limit durante etapa 2 — parando")
+                break
+            except GitHubError as e:
+                log.error("[%s] Erro GitHub issue #%s: %s", board_id, issue.get("id"), e)
 
-            elif status == "b-mv":
-                _action_b_mv(issue, repo)
-                log.info("[%s] b-mv #%s → %s", board_id, issue["id"], issue["column"])
-                count += 1
-
-            elif status == "l-del":
-                _action_l_del(issue, config, board_id)
-                log.info("[%s] l-del #%s", board_id, issue["id"])
-                to_remove.append(i)
-                count += 1
-
-            elif status == "l-mv":
-                _action_l_mv(issue, config, board_id)
-                log.info("[%s] l-mv #%s → %s", board_id, issue["id"], issue["column"])
-                count += 1
-
-            elif status == "l-sync":
-                _action_l_sync(issue, repo)
-
-            elif status == "l-new":
-                _action_l_new(issue, config, board_id, repo)
-                log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
-                count += 1
-
-        # Remove do snapshot
         for idx in reversed(to_remove):
             issues.pop(idx)
 
     return count
 
 
-def _action_b_new(issue: dict, repo: str) -> None:
-    """Cria os 3 arquivos locais para issue vinda do board."""
+def _action_l_sync(issue: dict, config: dict, board_id: str, cache: dict) -> None:
+    """l-sync: mover card se coluna mudou, atualizar body, postar write, reconstruir history."""
+    repo = config["repo"]
+    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
+
+    # Mover card se necessário
+    if issue["id"]:
+        move_card(config, issue["id"], board_id, col_name, cache)
+        # Cachear item_id
+        meta = cache.get(board_id, {})
+        items_cache = meta.get("items", {})
+        if str(issue["id"]) not in items_cache:
+            items_cache[str(issue["id"])] = None  # será resolvido por move_card
+
+    # Atualizar body se mudou
     filepath = Path(issue["path"])
-    history_path = Path(issue["history_path"])
+    if filepath.exists() and issue["id"]:
+        lines = filepath.read_text().splitlines()
+        body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
+        update_issue_body(repo, issue["id"], body)
+
+    # Postar write como comentário e limpar
     write_path = Path(issue["write_path"])
-    filepath.parent.mkdir(parents=True, exist_ok=True)
+    if write_path.exists():
+        content = write_path.read_text().strip()
+        if content and issue["id"]:
+            post_comment(repo, issue["id"], content)
+            write_path.write_text("")
 
-    # Arquivo principal
-    try:
-        from src.github import fetch_issue_comments
-        data = fetch_issue_comments(repo, issue["id"])
-        body = ""
-        # Busca body direto da issue
-        from subprocess import run
-        result = run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
-                      "--json", "body"], capture_output=True, text=True)
-        if result.returncode == 0:
-            body = json.loads(result.stdout).get("body", "")
-        updated_at = data.get("updatedAt", "")
-    except Exception:
-        body = ""
-        updated_at = ""
-
-    filepath.write_text(f"# {issue['name']}\n\n{body}\n")
-
-    # History
-    history, hist_updated = _build_history(repo, issue["id"])
-    history_path.write_text(history)
-    if hist_updated:
-        updated_at = hist_updated
-
-    # Write (vazio)
-    write_path.write_text("")
-
-    issue["l-time"] = str(filepath.stat().st_mtime)
-    issue["b-time"] = updated_at or _now_iso()
-    issue["status"] = "ok"
-
-
-def _action_b_del(issue: dict) -> None:
-    """Remove os 3 arquivos locais."""
-    for key in ("path", "history_path", "write_path"):
-        p = Path(issue[key])
-        if p.exists():
-            p.unlink()
-
-
-def _action_b_sync(issue: dict, repo: str) -> None:
-    """Atualiza history e principal se body mudou no board."""
-    filepath = Path(issue["path"])
-    history_path = Path(issue["history_path"])
-
-    # Atualiza history
-    history, updated_at = _build_history(repo, issue["id"])
-    if history:
+    # Reconstruir history
+    if issue["id"]:
+        history_path = Path(issue["history_path"])
+        history, updated_at = _build_history(repo, issue["id"])
+        history_path.parent.mkdir(parents=True, exist_ok=True)
         history_path.write_text(history)
+        if updated_at:
+            issue["b-time"] = updated_at
 
-    # Atualiza body se mudou
-    try:
-        from subprocess import run
-        result = run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
-                      "--json", "body"], capture_output=True, text=True)
-        if result.returncode == 0:
-            body = json.loads(result.stdout).get("body", "")
-            new_content = f"# {issue['name']}\n\n{body}\n"
-            if filepath.exists() and filepath.read_text() != new_content:
-                filepath.write_text(new_content)
-                issue["l-time"] = str(filepath.stat().st_mtime)
-    except Exception:
-        pass
-
-    if updated_at:
-        issue["b-time"] = updated_at
     issue["status"] = "ok"
 
 
-def _action_b_mv(issue: dict, repo: str) -> None:
-    """Move arquivos locais para nova coluna."""
-    old_path = Path(issue["path"])
-    board_id = old_path.parent.parent.name
-    new_col = issue["column"]
-    new_col_path = BOARDS_DIR / board_id / new_col
-
-    new_col_path.mkdir(parents=True, exist_ok=True)
-
-    # Move os 3 arquivos
-    for key in ("path", "history_path", "write_path"):
-        old = Path(issue[key])
-        new = new_col_path / old.name
-        if old.exists():
-            old.rename(new)
-        issue[key] = str(new)
-
-    # Atualiza history no novo local
-    history, updated_at = _build_history(repo, issue["id"])
-    history_path = Path(issue["history_path"])
-    if history:
-        history_path.write_text(history)
-
-    if updated_at:
-        issue["b-time"] = updated_at
-    issue["status"] = "ok"
-
-
-# ── Ações local → GitHub ──────────────────────────────────────────────────────
-
-
-def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
-    """Cria issue no GitHub, apaga arquivo original, recria com padrão correto."""
-    from src.github import create_issue, move_card, find_issue_by_title
-
+def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None:
+    """l-new: criar issue no GitHub, adicionar ao project, mover para coluna correta."""
+    repo = config["repo"]
     filepath = Path(issue["path"])
     body = ""
     title = issue["name"]
+
     if filepath.exists():
         lines = filepath.read_text().splitlines()
-        # Extrai título real da primeira linha (# Titulo)
         if lines and lines[0].startswith("# "):
             title = lines[0][2:].strip()
-        # Pula a primeira linha (# titulo) e linha vazia
         body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
-
     issue["name"] = title
 
-    # Deduplicação: verificar se issue com mesmo slug já existe no snapshot
-    slug = _slugify(title)
-    for board_issues in _load_snapshot().get("issues", {}).values():
-        for other in board_issues:
-            if other is not issue and other["id"] and _slugify(other["name"]) == slug:
-                issue["id"] = other["id"]
-                issue["status"] = "ok"
-                return
-
-    # Deduplicação: verificar se issue com mesmo título já existe no GitHub
-    existing = find_issue_by_title(repo, issue["name"])
-    if existing:
-        number = existing
-    else:
-        number = create_issue(repo, issue["name"], body)
+    # Criar issue no GitHub
+    number = create_issue(repo, title, body)
     issue["id"] = number
 
-    # Move para coluna correta no board
-    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
-    try:
-        move_card(config, number, board_id, col_name)
-    except Exception as e:
-        log.warning("Falha ao mover issue #%s no board: %s", number, e)
+    # Adicionar ao project e cachear item_id
+    node_id = get_issue_node_id(repo, number)
+    item_id = add_issue_to_project(config, board_id, node_id, cache)
+    meta = cache.get(board_id, {})
+    meta.setdefault("items", {})[str(number)] = item_id
 
-    # Apaga arquivo original e recria com padrão
+    # Mover para coluna correta
+    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
+    move_card(config, number, board_id, col_name, cache)
+
+    # Recriar arquivo com padrão correto
     if filepath.exists():
         filepath.unlink()
 
-    slug = _slugify(issue["name"])
+    slug = _slugify(title)
     base = f"{number}-{slug}"
     col_path = BOARDS_DIR / board_id / issue["column"]
     col_path.mkdir(parents=True, exist_ok=True)
@@ -643,11 +335,11 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     new_history = col_path / f"{base}-history.md"
     new_write = col_path / f"{base}-write.md"
 
-    new_path.write_text(f"# {issue['name']}\n\n{body}\n")
+    new_path.write_text(f"# {title}\n\n{body}\n")
     new_history.write_text("")
     new_write.write_text("")
 
-    # Limpa history/write antigos se existirem
+    # Limpar antigos
     for key in ("history_path", "write_path"):
         old = Path(issue[key])
         if old.exists() and old != new_history and old != new_write:
@@ -661,72 +353,280 @@ def _action_l_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     issue["status"] = "ok"
 
 
-def _action_l_del(issue: dict, config: dict, board_id: str) -> None:
-    """Fecha issue no GitHub e remove do board."""
-    from src.github import close_issue
-
+def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> None:
+    """l-del: fechar issue no GitHub se permitido, ou só remover do snapshot."""
     repo = config["repo"]
-    if issue["id"]:
+    if allow_del and issue["id"]:
+        post_comment(repo, issue["id"], "Issue removida via agent")
         close_issue(repo, issue["id"])
-
-    # Remove arquivos locais se ainda existirem
+    # Remove arquivos locais restantes
     for key in ("path", "history_path", "write_path"):
-        p = Path(issue[key])
-        if p.exists():
+        p = Path(issue.get(key, ""))
+        if p and p.exists():
             p.unlink()
 
 
-def _action_l_mv(issue: dict, config: dict, board_id: str) -> None:
-    """Move card no board, checa write, cria history/write no novo local."""
-    from src.github import move_card, post_comment
+# ══════════════════════════════════════════════════════════════════════════════
+# ETAPA 3: GitHub → Snapshot (buscar mudanças remotas)
+# ══════════════════════════════════════════════════════════════════════════════
 
+
+def _etapa3_github_para_snapshot(snapshot: dict, config: dict) -> int:
+    """Busca issues modificadas no GitHub e aplica no snapshot/local. Retorna ações."""
     repo = config["repo"]
-    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
+    last_sync = snapshot.get("last_sync")
+    cache = snapshot.setdefault("cache", {})
+    count = 0
 
-    # Move no GitHub
-    if issue["id"]:
-        move_card(config, issue["id"], board_id, col_name)
+    if not last_sync:
+        return count
 
-    # Checa write - se tem conteúdo, posta como comentário
-    write_path = Path(issue["write_path"])
-    if write_path.exists():
-        content = write_path.read_text().strip()
-        if content and issue["id"]:
-            post_comment(repo, issue["id"], content)
-        write_path.write_text("")
-    else:
-        write_path.parent.mkdir(parents=True, exist_ok=True)
-        write_path.write_text("")
+    try:
+        updated_numbers = set(fetch_updated_issues(repo, last_sync))
+    except (RateLimitError, GitHubError) as e:
+        log.warning("Etapa 3: falha ao buscar issues modificadas: %s", e)
+        return count
 
-    # Garante history no novo local
-    history_path = Path(issue["history_path"])
-    if not history_path.exists():
-        history, _ = _build_history(repo, issue["id"]) if issue["id"] else ("", "")
-        history_path.write_text(history)
+    if not updated_numbers:
+        return count
 
-    issue["column"] = _col_from_path(Path(issue["path"]))
+    for board_id, issues in snapshot.get("issues", {}).items():
+        name_to_id = _col_name_to_id(config, board_id)
+
+        for issue in issues:
+            if issue["status"] != "ok":
+                continue
+            if issue["id"] not in updated_numbers:
+                continue
+
+            # Buscar dados atualizados da issue
+            try:
+                data = fetch_issue_comments(repo, issue["id"])
+            except GitHubError:
+                continue
+
+            remote_updated = data.get("updatedAt", "")
+            if not remote_updated or remote_updated <= (issue.get("b-time") or ""):
+                continue
+
+            # Atualizar body local se diferente
+            try:
+                from subprocess import run as sp_run
+                result = sp_run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
+                                 "--json", "body"], capture_output=True, text=True)
+                if result.returncode == 0:
+                    remote_body = json.loads(result.stdout).get("body", "")
+                    filepath = Path(issue["path"])
+                    if filepath.exists():
+                        local_content = filepath.read_text()
+                        new_content = f"# {issue['name']}\n\n{remote_body}\n"
+                        if local_content != new_content:
+                            filepath.write_text(new_content)
+                            issue["l-time"] = str(filepath.stat().st_mtime)
+                            log.debug("[%s] #%s b-sync body atualizado localmente", board_id, issue["id"])
+            except Exception:
+                pass
+
+            # Reconstruir history
+            history_path = Path(issue["history_path"])
+            comments = data.get("comments", [])
+            if comments:
+                lines = []
+                for c in comments:
+                    lines.append(f"{c['author']['login']} - {c['createdAt']}")
+                    lines.append(c["body"])
+                    lines.append("--------")
+                    lines.append("")
+                history_path.write_text("\n".join(lines))
+
+            # Recriar write em branco
+            write_path = Path(issue["write_path"])
+            write_path.parent.mkdir(parents=True, exist_ok=True)
+            if not write_path.exists():
+                write_path.write_text("")
+
+            # Checar se coluna mudou no board (somente se status era ok)
+            # Precisa buscar coluna atual do item no project
+            try:
+                meta = resolve_project_metadata(config, board_id, cache)
+                items = fetch_board_items_graphql(meta["project_id"])
+                for item in items:
+                    if item["number"] == issue["id"]:
+                        remote_col_name = item["status"]
+                        remote_col_id = name_to_id.get(remote_col_name)
+                        if remote_col_id and remote_col_id != issue["column"]:
+                            # Mover arquivos locais para nova coluna
+                            log.debug("[%s] #%s b-sync coluna remota mudou (%s → %s)", board_id, issue["id"], issue["column"], remote_col_id)
+                            _move_local_files(issue, board_id, remote_col_id)
+                        # Atualizar cache de items
+                        meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
+                        break
+            except GitHubError:
+                pass
+
+            issue["b-time"] = remote_updated
+            log.debug("[%s] #%s b-sync aplicado (b-time=%s)", board_id, issue["id"], remote_updated)
+            count += 1
+
+        # Detectar issues novas no board (b-new)
+        try:
+            meta = resolve_project_metadata(config, board_id, cache)
+            remote_items = fetch_board_items_graphql(meta["project_id"])
+            snapshot_ids = {i["id"] for i in issues}
+            for item in remote_items:
+                if item["number"] not in snapshot_ids:
+                    issues.append({
+                        "id": item["number"],
+                        "name": _sanitize_name(item["title"]),
+                        "column": name_to_id.get(item["status"], item["status"]),
+                        "path": None,
+                        "history_path": None,
+                        "write_path": None,
+                        "l-time": None,
+                        "b-time": item["updated_at"],
+                        "created_at": None,
+                        "status": "b-new",
+                    })
+                    log.debug("[%s] #%s detectado b-new (%s)", board_id, item["number"], item["title"])
+                    count += 1
+                # Atualizar cache de items
+                meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
+        except GitHubError as e:
+            log.warning("Etapa 3: falha ao detectar b-new para '%s': %s", board_id, e)
+
+    return count
+
+
+def _move_local_files(issue: dict, board_id: str, new_col_id: str) -> None:
+    """Move os 3 arquivos locais para a nova coluna."""
+    new_col_path = BOARDS_DIR / board_id / new_col_id
+    new_col_path.mkdir(parents=True, exist_ok=True)
+
+    for key in ("path", "history_path", "write_path"):
+        old = Path(issue[key]) if issue.get(key) else None
+        if old and old.exists():
+            new = new_col_path / old.name
+            old.rename(new)
+            issue[key] = str(new)
+        elif old:
+            issue[key] = str(new_col_path / old.name)
+
+    issue["column"] = new_col_id
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ETAPA 4: Remoção de resíduos (b-del e b-new)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _etapa4_residuos(snapshot: dict, config: dict) -> int:
+    """Remove b-del e cria localmente b-new. Retorna ações."""
+    repo = config["repo"]
+    count = 0
+
+    for board_id, issues in list(snapshot.get("issues", {}).items()):
+        to_remove = []
+
+        for i, issue in enumerate(issues):
+            if issue["status"] == "b-del":
+                # Remover arquivos locais
+                for key in ("path", "history_path", "write_path"):
+                    p = Path(issue[key]) if issue.get(key) else None
+                    if p and p.exists():
+                        p.unlink()
+                to_remove.append(i)
+                log.info("[%s] b-del #%s removido localmente", board_id, issue["id"])
+                count += 1
+
+            elif issue["status"] == "b-new":
+                _action_b_new(issue, config, board_id, repo)
+                log.info("[%s] b-new #%s %s criado localmente", board_id, issue["id"], issue["name"])
+                count += 1
+
+        for idx in reversed(to_remove):
+            issues.pop(idx)
+
+    return count
+
+
+def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
+    """Cria os 3 arquivos locais para issue vinda do board."""
+    slug = _slugify(issue["name"])
+    base = f"{issue['id']}-{slug}"
+
+    # Resolver col_id (pode ser nome da coluna se veio do remote)
+    col_id = issue["column"]
+    name_to_id = _col_name_to_id(config, board_id)
+    if col_id in name_to_id:
+        col_id = name_to_id[col_id]
+        issue["column"] = col_id
+
+    col_path = BOARDS_DIR / board_id / col_id
+    col_path.mkdir(parents=True, exist_ok=True)
+
+    filepath = col_path / f"{base}.md"
+    history_path = col_path / f"{base}-history.md"
+    write_path = col_path / f"{base}-write.md"
+
+    # Buscar body da issue
+    body = ""
+    try:
+        from subprocess import run as sp_run
+        result = sp_run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
+                         "--json", "body"], capture_output=True, text=True)
+        if result.returncode == 0:
+            body = json.loads(result.stdout).get("body", "")
+    except Exception:
+        pass
+
+    filepath.write_text(f"# {issue['name']}\n\n{body}\n")
+
+    # History
+    history, updated_at = _build_history(repo, issue["id"])
+    history_path.write_text(history)
+
+    # Write (vazio)
+    write_path.write_text("")
+
+    issue["path"] = str(filepath)
+    issue["history_path"] = str(history_path)
+    issue["write_path"] = str(write_path)
+    issue["l-time"] = str(filepath.stat().st_mtime)
+    issue["b-time"] = updated_at or _now_iso()
     issue["status"] = "ok"
 
 
-def _action_l_sync(issue: dict, repo: str) -> None:
-    """Atualiza body no GitHub se principal mudou, posta write como comentário."""
-    from src.github import update_issue_body, post_comment
+# ══════════════════════════════════════════════════════════════════════════════
+# ENTRADA PRINCIPAL
+# ══════════════════════════════════════════════════════════════════════════════
 
-    filepath = Path(issue["path"])
-    write_path = Path(issue["write_path"])
 
-    # Atualiza body se o arquivo principal mudou
-    if filepath.exists() and issue["id"]:
-        lines = filepath.read_text().splitlines()
-        body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
-        update_issue_body(repo, issue["id"], body)
+def sync_issues(config: dict) -> bool:
+    """Sincronização de issues nas 4 etapas. Retorna True se houve ações."""
+    log.info("Sincronização de issues...")
+    snapshot = _load_snapshot()
+    if "issues" not in snapshot:
+        snapshot["issues"] = {}
 
-    # Se write tem conteúdo, posta como comentário e limpa
-    if write_path.exists():
-        content = write_path.read_text().strip()
-        if content and issue["id"]:
-            post_comment(repo, issue["id"], content)
-            write_path.write_text("")
+    count = 0
 
-    issue["b-time"] = _now_iso()
-    issue["status"] = "ok"
+    # Etapa 1: Local → Snapshot
+    _etapa1_local_para_snapshot(snapshot, config)
+
+    # Etapa 2: Snapshot → GitHub
+    count += _etapa2_snapshot_para_github(snapshot, config)
+
+    # Etapa 3: GitHub → Snapshot
+    try:
+        count += _etapa3_github_para_snapshot(snapshot, config)
+    except RateLimitError:
+        log.warning("Rate limit na etapa 3 — continuando")
+
+    # Etapa 4: Remoção de resíduos
+    count += _etapa4_residuos(snapshot, config)
+
+    # Atualizar last_sync
+    snapshot["last_sync"] = _now_iso()
+    _save_snapshot(snapshot)
+
+    return count > 0
