@@ -312,20 +312,7 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
     number = create_issue(repo, title, body)
     issue["id"] = number
 
-    # Adicionar ao project e cachear item_id
-    node_id = get_issue_node_id(repo, number)
-    item_id = add_issue_to_project(config, board_id, node_id, cache)
-    meta = cache.get(board_id, {})
-    meta.setdefault("items", {})[str(number)] = item_id
-
-    # Mover para coluna correta
-    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
-    move_card(config, number, board_id, col_name, cache)
-
-    # Recriar arquivo com padrão correto
-    if filepath.exists():
-        filepath.unlink()
-
+    # Renomear arquivo imediatamente para evitar re-detecção como l-new
     slug = _slugify(title)
     base = f"{number}-{slug}"
     col_path = BOARDS_DIR / board_id / issue["column"]
@@ -335,6 +322,8 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
     new_history = col_path / f"{base}-history.md"
     new_write = col_path / f"{base}-write.md"
 
+    if filepath.exists():
+        filepath.unlink()
     new_path.write_text(f"# {title}\n\n{body}\n")
     new_history.write_text("")
     new_write.write_text("")
@@ -349,6 +338,17 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
     issue["history_path"] = str(new_history)
     issue["write_path"] = str(new_write)
     issue["l-time"] = str(new_path.stat().st_mtime)
+
+    # Adicionar ao project e cachear item_id
+    node_id = get_issue_node_id(repo, number)
+    item_id = add_issue_to_project(config, board_id, node_id, cache)
+    meta = cache.get(board_id, {})
+    meta.setdefault("items", {})[str(number)] = item_id
+
+    # Mover para coluna correta
+    col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
+    move_card(config, number, board_id, col_name, cache)
+
     issue["b-time"] = _now_iso()
     issue["status"] = "ok"
 

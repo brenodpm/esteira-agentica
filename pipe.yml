@@ -162,7 +162,7 @@ boards:
         desc: "Agente de requisitos levanta requisitos e complementa documentações"
         agent: requirements
         gitevents: [create]
-        acao: "Entender o que foi solicitado; Entrevistar o usuario (via write e history) para fechar lacunas; quando não houver mais dúvidas criar ou alterar as documentações do ponto de vista negocial"
+        acao: "Entender o que foi solicitado; Entrevistar o usuario (via write e history) para fechar lacunas; quando não houver mais dúvidas criar ou alterar as documentações do ponto de vista negocial, sempre que terminar, mover a issue para advance"
         change:
           advance: validacao-negocial
       validacao-negocial:

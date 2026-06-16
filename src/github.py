@@ -299,7 +299,7 @@ def get_issue_node_id(repo: str, issue_number: int) -> str:
         "query($owner:String!,$name:String!,$num:Int!){repository(owner:$owner,name:$name){issue(number:$num){id}}}",
         owner=owner,
         name=name,
-        num=str(issue_number),
+        num=int(issue_number),
     )
     return data["repository"]["issue"]["id"]
 

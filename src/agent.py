@@ -218,12 +218,14 @@ def build_prompt(config: dict, task: dict) -> str:
     lines.append("")
 
     # --- TRANSIÇÕES ---
-    lines.append("## Transição de coluna")
-    lines.append("Mova o arquivo da issue para a coluna correta:")
+    lines.append("## Transição de coluna (OBRIGATÓRIO)")
+    lines.append("Ao finalizar, você DEVE mover os 3 arquivos da issue (`.md`, `-history.md`, `-write.md`) para a coluna de destino.")
+    lines.append("Se não mover, a esteira vai re-executar esta mesma tarefa no próximo ciclo.")
+    lines.append("")
     change = column.get("change", {})
     for condition, target_col in change.items():
         target_dir = str(BOARDS_DIR / board_id / target_col)
-        lines.append(f"- se **{condition}** → mover arquivo para `{target_dir}/`")
+        lines.append(f"- **{condition}** → `mv {task['path']} {task['history_path']} {task['write_path']} {target_dir}/`")
 
     return "\n".join(lines)
 
