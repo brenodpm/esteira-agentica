@@ -338,7 +338,11 @@ def get_issue_node_id(repo: str, issue_number: int) -> str:
         name=name,
         num=int(issue_number),
     )
-    return data["repository"]["issue"]["id"]
+    issue = (data or {}).get("repository", {}) or {}
+    issue = issue.get("issue")
+    if not issue:
+        raise GitHubError(f"Issue #{issue_number} não encontrada no repo {repo}")
+    return issue["id"]
 
 
 # ── Ações local → GitHub ──────────────────────────────────────────────────────
