@@ -73,11 +73,11 @@ def _rmdir(path: Path) -> None:
 
 
 def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
-    """Cria/atualiza boards remotos (somente se create-remote-boards=true)."""
-    if not config["boards_meta"].get("create-remote-boards"):
-        log.debug("[sync_github] create-remote-boards=false — pulando")
+    """Cria/atualiza boards remotos (somente se alter-remote-boards=true)."""
+    if not config["boards_meta"].get("alter-remote-boards"):
+        log.debug("[sync_github] alter-remote-boards=false — pulando")
         return
-    log.info("[sync_github] create-remote-boards=true — sincronizando boards remotos")
+    log.info("[sync_github] alter-remote-boards=true — sincronizando boards remotos")
     desired_names = {}
     for board_id, col_ids in desired.items():
         cols = config["boards"][board_id]["columns"]
@@ -161,7 +161,7 @@ def full_sync(config: dict, snapshot: dict) -> None:
     """Sincronização por virada de dia: atualiza boards, busca items, marca b-new/b-del."""
     desired = _desired_from_config(config)
 
-    # Atualizar boards remotos se create-remote-boards=true
+    # Atualizar boards remotos se alter-remote-boards=true
     _sync_github(config, desired)
 
     cache = snapshot.setdefault("cache", {})

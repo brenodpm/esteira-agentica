@@ -101,10 +101,17 @@ def _create_project(owner_id: str, title: str) -> dict:
     return data["createProjectV2"]["projectV2"]
 
 
-def _add_status_options(field_id: str, all_options: list[str]) -> None:
-    log.info("[push_boards] Atualizando opções do field %s com: %s", field_id, all_options)
+def _add_status_options(field_id: str, options: list[dict]) -> None:
+    """Atualiza opções do campo Status. options: [{name, id?}, ...] na ordem desejada."""
+    log.info("[push_boards] Atualizando opções do field %s com: %s", field_id, [o["name"] for o in options])
     _mutation_throttle()
-    opts = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in all_options) + "]"
+    parts = []
+    for o in options:
+        if o.get("id"):
+            parts.append(f'{{id:"{o["id"]}",name:"{o["name"]}",color:GRAY,description:""}}')
+        else:
+            parts.append(f'{{name:"{o["name"]}",color:GRAY,description:""}}')
+    opts = "[" + ",".join(parts) + "]"
     log.debug("[push_boards] Mutation payload: %s", opts)
     _gql(
         f'mutation($fid:ID!){{updateProjectV2Field(input:{{fieldId:$fid,singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
@@ -270,20 +277,31 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
                 pid=project["id"],
             )
         else:
-            existing = {o["name"] for o in status.get("options", [])}
-            log.info("[push_boards] Board '%s' — existentes: %s", board_name, existing)
+            existing_by_name = {o["name"]: o["id"] for o in status.get("options", [])}
+            log.info("[push_boards] Board '%s' — existentes: %s", board_name, set(existing_by_name.keys()))
             log.info("[push_boards] Board '%s' — desejadas: %s", board_name, columns)
-            all_opts = list(existing)
-            new_cols = []
+
+            # Montar lista ordenada conforme pipe.yml, com IDs das existentes
+            ordered_opts = []
             for col in columns:
-                if col not in existing:
-                    all_opts.append(col)
-                    new_cols.append(col)
-            if new_cols:
-                log.info("[push_boards] Board '%s' — novas colunas a adicionar: %s", board_name, new_cols)
-                _add_status_options(status["id"], all_opts)
+                opt = {"name": col}
+                if col in existing_by_name:
+                    opt["id"] = existing_by_name[col]
+                ordered_opts.append(opt)
+
+            # Colunas no GitHub que não estão no pipe.yml serão removidas
+            removed = set(existing_by_name.keys()) - set(columns)
+            if removed:
+                log.info("[push_boards] Board '%s' — colunas a remover: %s", board_name, removed)
+
+            needs_update = (
+                [o["name"] for o in ordered_opts] != [o["name"] for o in status.get("options", [])]
+            )
+            if needs_update:
+                log.info("[push_boards] Board '%s' — atualizando ordem/opções", board_name)
+                _add_status_options(status["id"], ordered_opts)
             else:
-                log.info("[push_boards] Board '%s' — nenhuma coluna nova", board_name)
+                log.info("[push_boards] Board '%s' — sem alterações", board_name)
 
     log.info("[push_boards] Concluído")
 

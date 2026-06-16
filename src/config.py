@@ -59,7 +59,7 @@ def load_config(path: str) -> dict:
     raw_boards = data.get("boards", {})
     boards = {k: v for k, v in raw_boards.items() if isinstance(v, dict) and "columns" in v}
     meta = {k: v for k, v in raw_boards.items() if k not in boards}
-    meta.setdefault("create-remote-boards", False)
+    meta.setdefault("alter-remote-boards", False)
     meta.setdefault("allow-del-remote-issue", False)
     return {
         "repo": data["git"]["repo"],
