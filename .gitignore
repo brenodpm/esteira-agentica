@@ -1,3 +1,4 @@
 .pipe/
 __pycache__/
 logs/
+pipe.yml
