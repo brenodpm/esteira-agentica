@@ -8,100 +8,112 @@ Sincronizador bidirecional entre GitHub Projects V2 e sistema de arquivos local.
 python -m src
 ```
 
-## pipe.yml
+## pipe.yml — Documentação Completa
 
 Arquivo de configuração central da esteira. Toda a estrutura de boards, colunas e fluxos é definida aqui. O pipe.yml é **mandatório** — qualquer alteração nele sobrescreve a estrutura local e remota.
 
-### pipe
+### Guia Rápido
 
+Para começar rapidamente, confira:
+- [📖 Visão Geral](docs/pipe-yml-config/01-visao-geral.md) — Estrutura geral do pipe.yml
+- [⚙️ Configuração Global](docs/pipe-yml-config/02-configuracao-global.md) — Timeout, sleeptime, doc path
+- [🌿 Git Flows](docs/pipe-yml-config/03-gitflows.md) — Como setup branches (feature, epic, hotfix, etc)
+- [📊 Boards e Colunas](docs/pipe-yml-config/04-boards-e-colunas.md) — Criar e organizar workflows
+- [🤖 Agentes e Esforço](docs/pipe-yml-config/05-agentes-e-esforco.md) — Atribuir agentes e controlar profundidade de análise
+- [💡 Exemplos Práticos](docs/pipe-yml-config/06-exemplos-praticos.md) — Casos de uso: novo board, customizar effort, gitflow, validação humana, etc
+
+### Referência Rápida
+
+#### Seção `pipe`
 Configurações globais do agente.
 
-| Campo             | Descrição                                                        |
-|-------------------|------------------------------------------------------------------|
-| `pipe.agent.timeout`   | Tempo máximo (em segundos) que uma operação individual pode levar antes de ser cancelada. |
-| `pipe.agent.sleeptime` | Intervalo (em segundos) entre cada ciclo do loop principal.       |
+```yaml
+pipe:
+  agent:
+    timeout: 1200    # Segundos antes de cancelar operação
+    sleeptime: 1800  # Intervalo entre ciclos (segundos)
+```
 
-### effort
+#### Seção `effort`
+Mapeamento de níveis para modelos e profundidade.
 
-Mapeamento global de níveis de effort para model e profundidade de raciocínio. Usado quando a issue sobrescreve o effort via tag `/effort`.
+```yaml
+effort:
+  low:
+    model: claude-haiku-4.5
+    effort: low      # Rápido, respostas diretas
+  medium:
+    model: claude-sonnet-4
+    effort: medium   # Padrão para a maioria
+  high:
+    model: claude-sonnet-4
+    effort: high     # Raciocínio profundo, análise detalhada
+```
 
-| Campo             | Descrição                                                        |
-|-------------------|------------------------------------------------------------------|
-| `effort.<level>.model`  | Modelo a ser usado quando o nível for aplicado.             |
-| `effort.<level>.effort` | Profundidade de raciocínio (`low`, `medium`, `high`).       |
+#### Seção `git`
+Setup de repositório e gitflows.
 
-Resolução de model/effort (ordem de precedência):
-1. `.kiro/agents/<name>.json` — valores padrão do agente
-2. `pipe.yml` coluna `effort` — sobrescreve o effort do agente
-3. Tag `/effort` na issue — sobrescreve model e effort usando o mapa `effort.<level>` (requer `allow-overwrite: true` na coluna)
+```yaml
+git:
+  repo: "owner/repo"
+  flow:
+    base: main
+    cleanup: true    # Remove branches locais após cada operação
+    
+    feature:
+      prefix: feature
+      description: "Branch de feature"
+      create: main    # De onde cria
+      merge: main     # Para onde vai o PR
+```
 
-### doc
+#### Seção `boards`
+Define todos os boards do projeto.
 
-Caminho do diretório onde a documentação do projeto será armazenada pelos agentes.
+```yaml
+boards:
+  story:
+    name: "User Stories"
+    todo: backlog           # Coluna inicial
+    priority: 3             # Ordem de processamento (0 = mais alta)
+    flow: epic              # Gitflow usado
+    columns:
+      backlog:
+        name: Backlog
+        agent: requirements # Se ausente = manual (humano)
+        effort: medium      # Sobrescreve esforço do agente
+        acao: "Entender demanda e criar documentação"
+        change:
+          advance: arquitetura  # Próxima coluna
+      arquitetura:
+        name: "Arquitetura"
+        agent: architecture
+        effort: high
+        acao: "Definir design técnico"
+        change:
+          advance: desenvolvimento
+```
 
-### git
+### Resolução de Precedência (Effort)
 
-Configurações de integração com o repositório GitHub.
+1. Padrão do agente em `.kiro/agents/<nome>.json`
+2. Configuração da coluna em `pipe.yml`
+3. Tag `/effort` na issue (se `allow-overwrite: true`)
 
-| Campo         | Descrição                                                                 |
-|---------------|---------------------------------------------------------------------------|
-| `git.repo`    | Identificador do repositório no formato `owner/repo`.                     |
-| `git.flow.base`    | Branch base do projeto (normalmente `main`).                         |
-| `git.flow.cleanup` | Se `true`, após cada operação de branch, retorna para a base e remove branches locais usadas. |
+### Estrutura Local
 
-#### Tipos de flow
+```
+.pipe/
+  boards/
+    <board-id>/
+      <col-id>/
+        (issues como arquivos)
+```
 
-Cada tipo de flow define como branches são criadas e mergeadas. São usados nos boards para indicar qual gitflow seguir.
-
-| Campo       | Descrição                                                                 |
-|-------------|---------------------------------------------------------------------------|
-| `prefix`    | Prefixo das branches criadas (ex: `feature/`, `fix/`).                    |
-| `description` | Descrição legível do propósito desse tipo de flow.                      |
-| `create`    | Branch de origem — de onde a nova branch será criada. Pode ser uma branch fixa (`main`) ou um prefixo de outro flow (ex: `release`), que será resolvido via issue. |
-| `merge`     | Branch de destino — para onde o merge/PR será direcionado. Mesma lógica de resolução. |
-
-### boards
-
-Define os boards do projeto. Cada board corresponde a um GitHub Project V2 e um diretório local em `boards/<board-id>/`.
-
-| Campo      | Descrição                                                                 |
-|------------|---------------------------------------------------------------------------|
-| `bugs`     | ID do board onde bugs são criados.                                         |
-| `needs`    | ID do board onde demandas para humanos ou outros agentes são criadas.      |
-| `name`     | Nome visível do board no GitHub Projects.                                  |
-| `todo`     | ID da coluna inicial onde issues novas entram.                             |
-| `priority` | Prioridade de execução do board (0 = mais alta). Boards com menor valor são processados primeiro. |
-| `flow`     | Tipo de gitflow associado a esse board (referencia um dos flows definidos em `git.flow`). |
-| `parallel` | Se `false`, issues desse board são processadas uma por vez (padrão: paralelo). |
-
-#### columns
-
-Cada board possui um mapa de colunas. Cada coluna vira um subdiretório em `.pipe/boards/<board-id>/<col-id>/`.
-
-| Campo          | Descrição                                                              |
-|----------------|------------------------------------------------------------------------|
-| `name`         | Nome visível da coluna no GitHub Projects (campo Status).               |
-| `desc`         | Descrição do que acontece nessa etapa.                                  |
-| `agent`        | Nome do agente responsável por executar a ação nessa coluna. Se ausente, a coluna é manual (humano). |
-| `effort`       | Nível de raciocínio do agente: `low`, `medium` ou `high`. Opcional, padrão `medium`. Níveis mais altos gastam mais tokens em análise profunda e geração minuciosa; níveis mais baixos produzem respostas mais rápidas e diretas. |
-| `gitevents`    | Lista opcional de eventos git da coluna: `create` (cria branch conforme gitflow), `keep` (padrão — branch já existe e é mantida), `merge` (solicita merge request ao concluir). Aceita combinação de eventos. |
-| `acao`         | Instrução textual do que o agente deve fazer quando uma issue chega nessa coluna. |
-| `git_commit`   | Se `true`, o agente faz commit das alterações produzidas.               |
-| `git_merge`    | Se `true`, a coluna envolve criação de PR ou merge para a branch destino do flow. |
-| `wait_children`| Se `true`, a issue fica parada até que todas as issues filhas estejam concluídas. |
-| `allow-overwrite` | Se `true`, permite que a tag `/effort` na issue sobrescreva model e effort da coluna. Padrão: `false`. |
-
-#### change
-
-Define as transições possíveis a partir de uma coluna.
-
-| Campo      | Descrição                                                                |
-|------------|--------------------------------------------------------------------------|
-| `advance`  | ID da próxima coluna quando a etapa é concluída com sucesso.              |
-| `reprovar` | ID da coluna para onde a issue volta em caso de reprovação humana.        |
-| `cancelar` | ID da coluna de cancelamento.                                             |
-| `falha`    | ID da coluna para onde a issue volta quando testes falham.                |
-| `bloquear` | ID da coluna de bloqueio (dependência externa).                           |
+**Regra de prioridade**:
+1. `pipe.yml` — fonte da verdade
+2. Disco local — reflete o pipe.yml
+3. GitHub — recebe atualizações
 
 ## Estrutura local
 
