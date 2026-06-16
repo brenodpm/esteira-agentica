@@ -59,8 +59,8 @@ git:
 boards:
   bugs: bug
   needs: debito
-  create-remote-boards: false
-  allow-del-remote-issue: false
+  create-remote-boards: true
+  allow-del-remote-issue: true
 
   # ──────────────────────────────────────────────
   # EPIC — ciclo completo de um épico
