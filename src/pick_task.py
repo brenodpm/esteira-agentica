@@ -58,6 +58,8 @@ def _is_blocked(issue: dict, issues_map: dict) -> bool:
     if not path.exists():
         return False
     content = path.read_text()
+    if "/need_human" in content:
+        return True
     blockers = re.findall(r"/blocked_by\s+(\d+)", content)
     if not blockers:
         return False
