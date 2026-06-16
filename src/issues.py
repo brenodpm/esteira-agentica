@@ -666,7 +666,9 @@ def _validate_directories(config: dict) -> None:
         if not board_path.exists():
             continue
         expected_cols = set(board.get("columns", {}).keys())
-        todo_col = board["todo"]
+        todo_col = board.get("todo")
+        if not todo_col:
+            continue
         todo_path = board_path / todo_col
         todo_path.mkdir(exist_ok=True)
 

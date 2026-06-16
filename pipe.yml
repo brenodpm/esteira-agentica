@@ -104,7 +104,7 @@ boards:
         change:
           advance: release
       release:
-        name: "Criação de User Stories"
+        name: "Release"
         desc: "Agente de negócio cria as user stories do épico"
         agent: product
         acao: "Ler todas as documentações, criar as respectivas user stories no board e bloquear este epico com o id das uses histories criadas"
@@ -298,6 +298,7 @@ boards:
     name: "Débitos"
     priority: 1
     flow: bugfix
+    todo: humano
     columns:
       humano:
         name: "Humano"
