@@ -1,4 +1,5 @@
 import time
+from datetime import datetime, timezone, timedelta
 
 from src.config import load_config
 from src.log import log, cleanup_logs
@@ -7,6 +8,13 @@ from src.issues import sync_issues
 from src.pick_task import pick_task, TODO_ADVANCE
 from src.agent import run_agent
 from src.github import RateLimitError, GitHubError
+
+_tz = timezone(timedelta(hours=-3))
+
+
+def _log_wake(sleeptime):
+    wake = datetime.now(_tz) + timedelta(seconds=sleeptime)
+    log.info("Retorno às %s", wake.strftime("%H:%M:%S"))
 
 
 def main():
@@ -38,13 +46,18 @@ def main():
             elif not synced:
                 log.info("Nenhuma tarefa elegível")
                 log.info("intervalo: %ds", sleeptime)
+                _log_wake(sleeptime)
                 time.sleep(sleeptime)
         except RateLimitError:
-            log.warning("Rate limit — aguardando próximo ciclo")
+            log.warning("Rate limit — dormindo %ds", sleeptime)
+            _log_wake(sleeptime)
+            time.sleep(sleeptime)
         except GitHubError as e:
             log.error("Erro GitHub: %s", e)
         except Exception as e:
             log.error("Erro inesperado: %s", e, exc_info=True)
+            _log_wake(sleeptime)
+            time.sleep(sleeptime)
 
 
 if __name__ == "__main__":

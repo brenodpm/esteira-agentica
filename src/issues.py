@@ -256,8 +256,10 @@ def _etapa2_snapshot_para_github(snapshot: dict, config: dict) -> int:
                     count += 1
 
                 elif issue["status"] == "l-new":
-                    _action_l_new(issue, config, board_id, cache)
-                    log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
+                    if _action_l_new(issue, config, board_id, cache, issues):
+                        to_remove.append(i)
+                    else:
+                        log.info("[%s] l-new #%s %s", board_id, issue["id"], issue["name"])
                     count += 1
 
                 elif issue["status"] == "l-del":
@@ -321,8 +323,8 @@ def _action_l_sync(issue: dict, config: dict, board_id: str, cache: dict) -> Non
     issue["status"] = "ok"
 
 
-def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None:
-    """l-new: criar issue no GitHub, adicionar ao project, mover para coluna correta."""
+def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict, all_issues: list) -> bool:
+    """l-new: criar issue no GitHub. Retorna True se duplicata (deve ser removida do snapshot)."""
     repo = config["repo"]
     filepath = Path(issue["path"])
     body = ""
@@ -334,6 +336,18 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
             title = lines[0][2:].strip()
         body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
     issue["name"] = title
+
+    # Dedup: verificar se já existe issue com mesmo nome neste board
+    for other in all_issues:
+        if other is issue:
+            continue
+        if other["name"] == title and other["status"] != "l-new":
+            log.info("[%s] dedup: '%s' já existe (#%s) — removendo local", board_id, title, other["id"])
+            for key in ("path", "history_path", "write_path"):
+                p = Path(issue.get(key, ""))
+                if p.exists():
+                    p.unlink()
+            return True
 
     # Criar issue no GitHub
     number = create_issue(repo, title, body)
@@ -378,6 +392,7 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
 
     issue["b-time"] = _now_iso()
     issue["status"] = "ok"
+    return False
 
 
 def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> None:

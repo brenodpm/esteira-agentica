@@ -394,7 +394,14 @@ def move_card(config: dict, issue_number: int, board_id: str, col_name: str, cac
     field_id = meta["status_field_id"]
     option_id = meta["options"].get(col_name)
     if not option_id:
-        raise GitHubError(f"Coluna '{col_name}' não encontrada no project")
+        # Cache stale — invalidar e rebuscar da fonte
+        cache.pop(board_id, None)
+        meta = resolve_project_metadata(config, board_id, cache)
+        project_id = meta["project_id"]
+        field_id = meta["status_field_id"]
+        option_id = meta["options"].get(col_name)
+        if not option_id:
+            raise GitHubError(f"Coluna '{col_name}' não encontrada no project")
 
     items_cache = meta.setdefault("items", {})
     item_id = items_cache.get(str(issue_number))
