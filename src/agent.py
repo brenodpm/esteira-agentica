@@ -169,7 +169,8 @@ def build_prompt(config: dict, task: dict) -> str:
     lines.append(f"- Leia a issue em `{task['path']}` e o histórico em `{task['history_path']}` para checar se há orientações extras e execute o que é pedidi")
     lines.append(f"- Verifique se as tarefas em `/blocked_by` foram concluídas; se NÃO: anote em `{task['write_path']}` e vá direto para o passo de cleanup")
     lines.append(f"- Se houver dúvidas: escreva em `{task['write_path']}` e adicione `/need_human` no body da issue, depois vá para cleanup")
-    lines.append(f"- Se houver demanda bloqueante: crie um card em `{needs_dir}`")
+    lines.append(f"- Se a execução depender da conclusão de outra demanda adicione `/blocked_by` no body seguida pelo id e board da demanda, depois vá para cleanup")
+    lines.append(f"- Se necessitar de alguma definição|documentação|especificação que seja bloqueante: crie um card em `{needs_dir}` solicitando tudo que precisa (verificar antes se a demanda não existe), depois vá para cleanup")
     lines.append(f"- Ao criar novos cards em `.pipe/boards/`, nomeie SEM prefixo numérico (ex: `minha-tarefa.md`, NÃO `1-minha-tarefa.md`). A esteira atribui o ID automaticamente.")
     lines.append("")
 
@@ -185,22 +186,20 @@ def build_prompt(config: dict, task: dict) -> str:
 
     # --- MERGE ---
     if do_merge:
-        lines.append("## 4. Merge (execute via shell)")
+        lines.append("## 4. Pull Request (execute via shell)")
         if merge_branch:
             lines.append("```bash")
-            lines.append(f"git checkout {merge_branch} && git pull origin {merge_branch}")
-            lines.append(f"git merge {branch_name} --no-ff -m \"merge: {branch_name} -> {merge_branch}\"")
-            lines.append(f"git push origin {merge_branch}")
+            lines.append(f"git push origin {branch_name}")
+            lines.append(f"gh pr create --base {merge_branch} --head {branch_name} --title \"merge: {branch_name} -> {merge_branch}\" --body \"Automated PR from agent\"")
             lines.append("```")
         else:
             lines.append(f"A branch de merge usa prefixo '{merge_prefix}'. Descubra a branch exata:")
             lines.append(f"- Procure no body da issue `{task['path']}` por `<!-- branch: {merge_prefix}/... -->`")
             lines.append(f"- Ou use: `git branch -r | grep 'origin/{merge_prefix}/'` para encontrar")
             lines.append("```bash")
+            lines.append(f"git push origin {branch_name}")
             lines.append("# substitua <MERGE_BRANCH> pela branch correta encontrada:")
-            lines.append("git checkout <MERGE_BRANCH> && git pull origin <MERGE_BRANCH>")
-            lines.append(f"git merge {branch_name} --no-ff -m \"merge: {branch_name} -> <MERGE_BRANCH>\"")
-            lines.append("git push origin <MERGE_BRANCH>")
+            lines.append(f"gh pr create --base <MERGE_BRANCH> --head {branch_name} --title \"merge: {branch_name} -> <MERGE_BRANCH>\" --body \"Automated PR from agent\"")
             lines.append("```")
         lines.append("")
 
