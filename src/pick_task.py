@@ -53,23 +53,12 @@ def _advance_from_todo(issue: dict, board_id: str, board: dict) -> bool:
 
 
 def _is_blocked(issue: dict, issues_map: dict) -> bool:
-    """Retorna True se a issue tem /blocked_by apontando para issue não concluída."""
+    """Retorna True se a issue tem /blocked_by ou /need_human."""
     path = Path(issue["path"])
     if not path.exists():
         return False
     content = path.read_text()
-    if "/need_human" in content:
-        return True
-    blockers = re.findall(r"/blocked_by\s+(\d+)", content)
-    if not blockers:
-        return False
-    for blocker_id in blockers:
-        bid = int(blocker_id)
-        for board_issues in issues_map.values():
-            for other in board_issues:
-                if other["id"] == bid and other["column"] != "concluido":
-                    return True
-    return False
+    return "/need_human" in content or "/blocked_by" in content
 
 
 def pick_task(config: dict) -> dict | str | None:
