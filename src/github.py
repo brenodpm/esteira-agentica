@@ -278,8 +278,6 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
             )
         else:
             existing_by_name = {o["name"]: o["id"] for o in status.get("options", [])}
-            log.info("[push_boards] Board '%s' — existentes: %s", board_name, set(existing_by_name.keys()))
-            log.info("[push_boards] Board '%s' — desejadas: %s", board_name, columns)
 
             # Montar lista ordenada conforme pipe.yml, com IDs das existentes
             ordered_opts = []

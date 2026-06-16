@@ -274,6 +274,12 @@ def _etapa2_snapshot_para_github(snapshot: dict, config: dict) -> int:
                 break
             except GitHubError as e:
                 log.error("[%s] Erro GitHub issue #%s: %s", board_id, issue.get("id"), e)
+                if "não encontrada no repo" in str(e):
+                    for key in ("path", "history_path", "write_path"):
+                        p = Path(issue.get(key, ""))
+                        if p.exists():
+                            p.unlink()
+                    to_remove.append(i)
 
         for idx in reversed(to_remove):
             issues.pop(idx)
