@@ -75,11 +75,14 @@ def _rmdir(path: Path) -> None:
 def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
     """Cria/atualiza boards remotos (somente se create-remote-boards=true)."""
     if not config["boards_meta"].get("create-remote-boards"):
+        log.debug("[sync_github] create-remote-boards=false — pulando")
         return
+    log.info("[sync_github] create-remote-boards=true — sincronizando boards remotos")
     desired_names = {}
     for board_id, col_ids in desired.items():
         cols = config["boards"][board_id]["columns"]
         desired_names[board_id] = [cols[c].get("name", c) for c in col_ids]
+    log.debug("[sync_github] Desired names: %s", {k: v for k, v in desired_names.items()})
     try:
         push_boards(config, desired_names)
     except RateLimitError:

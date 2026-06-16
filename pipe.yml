@@ -166,7 +166,7 @@ boards:
         change:
           advance: validacao-negocial
       validacao-negocial:
-        name: "Validação de Artefatos"
+        name: "Validação Negocial"
         desc: "Humano valida documentação de negócio"
       arquitetura:
         name: "Arquitetura"
@@ -177,7 +177,7 @@ boards:
         change:
           advance: validacao-arquitetura
       validacao-arquitetura:
-        name: "Validação de Artefatos"
+        name: "Validação Arquitetural"
         desc: "Humano valida as documentações arquiteturais"
       planejamento-tecnico:
         name: "Planejamento Técnico"

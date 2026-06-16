@@ -45,6 +45,21 @@ def _sanitize_name(text: str) -> str:
     return text.replace(".", "").replace("-", "")
 
 
+LOGS_DIR = Path("logs")
+
+
+def _append_write_to_log(issue_id: int, content: str) -> None:
+    """Append conteúdo do write ao log mais recente da issue."""
+    issue_log_dir = LOGS_DIR / str(issue_id)
+    if not issue_log_dir.exists():
+        return
+    logs = sorted(issue_log_dir.glob("*.log"))
+    if not logs:
+        return
+    with logs[-1].open("a", encoding="utf-8") as f:
+        f.write(f"\n═══ WRITE ═══\n{content}\n")
+
+
 def _col_name_to_id(config: dict, board_id: str) -> dict[str, str]:
     return {
         col.get("name", col_id): col_id
@@ -83,11 +98,16 @@ def _build_history(repo: str, issue_number: int) -> tuple[str, str]:
 
 
 def _scan_local_files(board_id: str) -> dict[int, Path]:
-    """Retorna {issue_id: path} de todos os arquivos slug no board."""
+    """Retorna {issue_id: path} de todos os arquivos slug no board.
+    
+    Arquivos com prefixo numérico usam o número como ID.
+    Arquivos sem prefixo numérico recebem ID negativo (temporário, para l-new).
+    """
     board_path = BOARDS_DIR / board_id
     result = {}
     if not board_path.exists():
         return result
+    next_temp_id = -1
     for col_dir in board_path.iterdir():
         if not col_dir.is_dir():
             continue
@@ -96,6 +116,9 @@ def _scan_local_files(board_id: str) -> dict[int, Path]:
                 match = re.match(r"^(\d+)-", f.name)
                 if match:
                     result[int(match.group(1))] = f
+                else:
+                    result[next_temp_id] = f
+                    next_temp_id -= 1
     return result
 
 
@@ -149,8 +172,11 @@ def _etapa1_local_para_snapshot(snapshot: dict, config: dict) -> None:
                 log.debug("[%s] #%s detectado l-sync (arquivo modificado)", board_id, number)
 
         # Arquivos locais sem entrada no snapshot → l-new
+        snapshot_paths = {i["path"] for i in issues}
         for file_id, file_path in local_files.items():
             if file_id in snapshot_ids:
+                continue
+            if str(file_path) in snapshot_paths:
                 continue
             col_id = _col_from_path(file_path)
             slug = file_path.stem
@@ -279,6 +305,7 @@ def _action_l_sync(issue: dict, config: dict, board_id: str, cache: dict) -> Non
     if write_path.exists():
         content = write_path.read_text().strip()
         if content and issue["id"]:
+            _append_write_to_log(issue["id"], content)
             post_comment(repo, issue["id"], content)
             write_path.write_text("")
 
@@ -356,7 +383,7 @@ def _action_l_new(issue: dict, config: dict, board_id: str, cache: dict) -> None
 def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> None:
     """l-del: fechar issue no GitHub se permitido, ou só remover do snapshot."""
     repo = config["repo"]
-    if allow_del and issue["id"]:
+    if allow_del and issue["id"] and issue["id"] > 0:
         post_comment(repo, issue["id"], "Issue removida via agent")
         close_issue(repo, issue["id"])
     # Remove arquivos locais restantes
@@ -371,11 +398,12 @@ def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> 
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def _etapa3_github_para_snapshot(snapshot: dict, config: dict) -> int:
+def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycle: set = None) -> int:
     """Busca issues modificadas no GitHub e aplica no snapshot/local. Retorna ações."""
     repo = config["repo"]
     last_sync = snapshot.get("last_sync")
     cache = snapshot.setdefault("cache", {})
+    deleted_this_cycle = deleted_this_cycle or set()
     count = 0
 
     if not last_sync:
@@ -474,7 +502,7 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict) -> int:
             remote_items = fetch_board_items_graphql(meta["project_id"])
             snapshot_ids = {i["id"] for i in issues}
             for item in remote_items:
-                if item["number"] not in snapshot_ids:
+                if item["number"] not in snapshot_ids and item["number"] not in deleted_this_cycle:
                     issues.append({
                         "id": item["number"],
                         "name": _sanitize_name(item["title"]),
@@ -613,12 +641,19 @@ def sync_issues(config: dict) -> bool:
     # Etapa 1: Local → Snapshot
     _etapa1_local_para_snapshot(snapshot, config)
 
+    # Coletar IDs que serão deletados neste ciclo (guard contra re-criação)
+    deleted_this_cycle = set()
+    for issues in snapshot.get("issues", {}).values():
+        for i in issues:
+            if i["status"] == "l-del":
+                deleted_this_cycle.add(i["id"])
+
     # Etapa 2: Snapshot → GitHub
     count += _etapa2_snapshot_para_github(snapshot, config)
 
     # Etapa 3: GitHub → Snapshot
     try:
-        count += _etapa3_github_para_snapshot(snapshot, config)
+        count += _etapa3_github_para_snapshot(snapshot, config, deleted_this_cycle)
     except RateLimitError:
         log.warning("Rate limit na etapa 3 — continuando")
 

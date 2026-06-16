@@ -45,7 +45,8 @@ def _gh(*args) -> str:
 def _gql(query: str, **variables) -> dict:
     args = ["gh", "api", "graphql", "-f", f"query={query}"]
     for k, v in variables.items():
-        args += ["-f", f"{k}={v}"]
+        flag = "-F" if isinstance(v, (int, float, bool)) else "-f"
+        args += [flag, f"{k}={v}"]
     result = subprocess.run(args, capture_output=True, text=True)
     output = result.stdout.strip()
     error = result.stderr.strip()
@@ -101,12 +102,15 @@ def _create_project(owner_id: str, title: str) -> dict:
 
 
 def _add_status_options(field_id: str, all_options: list[str]) -> None:
+    log.info("[push_boards] Atualizando opções do field %s com: %s", field_id, all_options)
     _mutation_throttle()
     opts = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in all_options) + "]"
+    log.debug("[push_boards] Mutation payload: %s", opts)
     _gql(
         f'mutation($fid:ID!){{updateProjectV2Field(input:{{fieldId:$fid,singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
         fid=field_id,
     )
+    log.info("[push_boards] Mutation executada com sucesso")
 
 
 def resolve_project_metadata(config: dict, board_id: str, cache: dict) -> dict:
@@ -241,19 +245,25 @@ def fetch_updated_issues(repo: str, since: str) -> list[int]:
 
 def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
     """Garante que os boards remotos tenham as colunas desejadas."""
+    log.info("[push_boards] Iniciando — boards: %s", list(desired.keys()))
     owner = config["repo"].split("/")[0]
     owner_id, owner_type = _resolve_owner(owner)
     projects = _list_projects(owner, owner_type)
     projects_by_title = {p["title"]: p for p in projects}
+    log.debug("[push_boards] Projects existentes: %s", list(projects_by_title.keys()))
 
     for board_id, columns in desired.items():
         board_name = config["boards"][board_id].get("name", board_id)
         project = projects_by_title.get(board_name)
         if not project:
+            log.info("[push_boards] Board '%s' não encontrado — criando", board_name)
             project = _create_project(owner_id, board_name)
+        else:
+            log.debug("[push_boards] Board '%s' encontrado (id=%s)", board_name, project["id"])
 
         status = _get_status_field(project["id"])
         if not status:
+            log.info("[push_boards] Board '%s' sem campo Status — criando com colunas: %s", board_name, columns)
             opts = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in columns) + "]"
             _gql(
                 f'mutation($pid:ID!){{createProjectV2Field(input:{{projectId:$pid,dataType:SINGLE_SELECT,name:"Status",singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
@@ -261,12 +271,21 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
             )
         else:
             existing = {o["name"] for o in status.get("options", [])}
+            log.info("[push_boards] Board '%s' — existentes: %s", board_name, existing)
+            log.info("[push_boards] Board '%s' — desejadas: %s", board_name, columns)
             all_opts = list(existing)
+            new_cols = []
             for col in columns:
                 if col not in existing:
                     all_opts.append(col)
-            if len(all_opts) > len(existing):
+                    new_cols.append(col)
+            if new_cols:
+                log.info("[push_boards] Board '%s' — novas colunas a adicionar: %s", board_name, new_cols)
                 _add_status_options(status["id"], all_opts)
+            else:
+                log.info("[push_boards] Board '%s' — nenhuma coluna nova", board_name)
+
+    log.info("[push_boards] Concluído")
 
 
 def add_issue_to_project(config: dict, board_id: str, issue_node_id: str, cache: dict = None) -> str:
