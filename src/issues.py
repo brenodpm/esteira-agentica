@@ -629,9 +629,58 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+def _validate_directories(config: dict) -> None:
+    """Valida diretórios em .pipe/boards/ — cria faltantes, move extras para 'todo'."""
+    if not BOARDS_DIR.exists():
+        return
+
+    expected_boards = set(config["boards"].keys())
+    existing_boards = {d.name for d in BOARDS_DIR.iterdir() if d.is_dir()}
+
+    for missing in expected_boards - existing_boards:
+        (BOARDS_DIR / missing).mkdir()
+        log.info("[validate] criado diretório board: %s", missing)
+    for extra in existing_boards - expected_boards:
+        extra_path = BOARDS_DIR / extra
+        if not any(extra_path.rglob("*.md")):
+            extra_path.rmdir()
+            log.info("[validate] removido diretório board vazio: %s", extra)
+
+    for board_id, board in config["boards"].items():
+        board_path = BOARDS_DIR / board_id
+        if not board_path.exists():
+            continue
+        expected_cols = set(board.get("columns", {}).keys())
+        todo_col = board["todo"]
+        todo_path = board_path / todo_col
+        todo_path.mkdir(exist_ok=True)
+
+        # Arquivos soltos no nível do board → mover para todo
+        for f in board_path.iterdir():
+            if f.is_file():
+                f.rename(todo_path / f.name)
+                log.info("[validate] movido %s → %s/%s (solto no board)", f.name, board_id, todo_col)
+
+        existing_cols = {d.name for d in board_path.iterdir() if d.is_dir()}
+
+        for missing in expected_cols - existing_cols:
+            (board_path / missing).mkdir()
+            log.info("[validate] criado diretório coluna: %s/%s", board_id, missing)
+
+        for extra in existing_cols - expected_cols:
+            extra_path = board_path / extra
+            for f in extra_path.iterdir():
+                if f.is_file():
+                    f.rename(todo_path / f.name)
+                    log.info("[validate] movido %s → %s/%s (coluna extra)", f.name, board_id, todo_col)
+            extra_path.rmdir()
+            log.info("[validate] removido diretório extra: %s/%s", board_id, extra)
+
+
 def sync_issues(config: dict) -> bool:
     """Sincronização de issues nas 4 etapas. Retorna True se houve ações."""
     log.info("Sincronização de issues...")
+    _validate_directories(config)
     snapshot = _load_snapshot()
     if "issues" not in snapshot:
         snapshot["issues"] = {}
