@@ -32,11 +32,11 @@ def _gh(*args) -> str:
     error = result.stderr.strip()
 
     if "rate limit" in output.lower() or "rate limit" in error.lower():
-        log.warning("Rate limit na chamada: gh %s", " ".join(args[:3]))
+        log.warning("[GitHub] Rate limit na chamada: gh %s", " ".join(args[:3]))
         raise RateLimitError("GitHub API rate limit excedido")
 
     if result.returncode != 0:
-        log.debug("gh %s → erro: %s", " ".join(args[:3]), error or output)
+        log.debug("[GitHub] gh %s → erro: %s", " ".join(args[:3]), error or output)
         raise GitHubError(error or output or f"gh retornou código {result.returncode}")
 
     return result.stdout
@@ -103,7 +103,7 @@ def _create_project(owner_id: str, title: str) -> dict:
 
 def _add_status_options(field_id: str, options: list[dict]) -> None:
     """Atualiza opções do campo Status. options: [{name, id?}, ...] na ordem desejada."""
-    log.info("[push_boards] Atualizando opções do field %s com: %s", field_id, [o["name"] for o in options])
+    log.info("[GitHub] Atualizando opções do field %s com: %s", field_id, [o["name"] for o in options])
     _mutation_throttle()
     parts = []
     for o in options:
@@ -112,12 +112,12 @@ def _add_status_options(field_id: str, options: list[dict]) -> None:
         else:
             parts.append(f'{{name:"{o["name"]}",color:GRAY,description:""}}')
     opts = "[" + ",".join(parts) + "]"
-    log.debug("[push_boards] Mutation payload: %s", opts)
+    log.debug("[GitHub] Mutation payload: %s", opts)
     _gql(
         f'mutation($fid:ID!){{updateProjectV2Field(input:{{fieldId:$fid,singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
         fid=field_id,
     )
-    log.info("[push_boards] Mutation executada com sucesso")
+    log.info("[GitHub] Mutation executada com sucesso")
 
 
 def resolve_project_metadata(config: dict, board_id: str, cache: dict) -> dict:
@@ -252,25 +252,25 @@ def fetch_updated_issues(repo: str, since: str) -> list[int]:
 
 def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
     """Garante que os boards remotos tenham as colunas desejadas."""
-    log.info("[push_boards] Iniciando — boards: %s", list(desired.keys()))
+    log.info("[GitHub] Checando — boards: %s", list(desired.keys()))
     owner = config["repo"].split("/")[0]
     owner_id, owner_type = _resolve_owner(owner)
     projects = _list_projects(owner, owner_type)
     projects_by_title = {p["title"]: p for p in projects}
-    log.debug("[push_boards] Projects existentes: %s", list(projects_by_title.keys()))
+    log.debug("[GitHub] Projects existentes: %s", list(projects_by_title.keys()))
 
     for board_id, columns in desired.items():
         board_name = config["boards"][board_id].get("name", board_id)
         project = projects_by_title.get(board_name)
         if not project:
-            log.info("[push_boards] Board '%s' não encontrado — criando", board_name)
+            log.info("[GitHub] Board '%s' não encontrado — criando", board_name)
             project = _create_project(owner_id, board_name)
         else:
-            log.debug("[push_boards] Board '%s' encontrado (id=%s)", board_name, project["id"])
+            log.debug("[GitHub] Board '%s' encontrado (id=%s)", board_name, project["id"])
 
         status = _get_status_field(project["id"])
         if not status:
-            log.info("[push_boards] Board '%s' sem campo Status — criando com colunas: %s", board_name, columns)
+            log.info("[GitHub] Board '%s' sem campo Status — criando com colunas: %s", board_name, columns)
             opts = "[" + ",".join(f'{{name:"{n}",color:GRAY,description:""}}' for n in columns) + "]"
             _gql(
                 f'mutation($pid:ID!){{createProjectV2Field(input:{{projectId:$pid,dataType:SINGLE_SELECT,name:"Status",singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
@@ -290,18 +290,18 @@ def push_boards(config: dict, desired: dict[str, list[str]]) -> None:
             # Colunas no GitHub que não estão no pipe.yml serão removidas
             removed = set(existing_by_name.keys()) - set(columns)
             if removed:
-                log.info("[push_boards] Board '%s' — colunas a remover: %s", board_name, removed)
+                log.info("[GitHub] Board '%s' — colunas a remover: %s", board_name, removed)
 
             needs_update = (
                 [o["name"] for o in ordered_opts] != [o["name"] for o in status.get("options", [])]
             )
             if needs_update:
-                log.info("[push_boards] Board '%s' — atualizando ordem/opções", board_name)
+                log.info("[GitHub] Board '%s' — atualizando ordem/opções", board_name)
                 _add_status_options(status["id"], ordered_opts)
             else:
-                log.info("[push_boards] Board '%s' — sem alterações", board_name)
+                log.info("[GitHub] Board '%s' — sem alterações", board_name)
 
-    log.info("[push_boards] Concluído")
+    log.info("[GitHub] Concluído")
 
 
 def add_issue_to_project(config: dict, board_id: str, issue_node_id: str, cache: dict = None) -> str:

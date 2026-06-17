@@ -1,7 +1,7 @@
 pipe:
   agent:
     timeout: 1200
-    sleeptime: 1800
+    sleeptime: 7200
 
 ttl-log: 10
 
