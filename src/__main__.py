@@ -18,6 +18,7 @@ def _log_wake(sleeptime):
 
 
 def main():
+    log.info("")
     log.info("[Pipe] Inicianda")
     config = load_config("pipe.yml")
     cleanup_logs(config.get("ttl-log", 10))
