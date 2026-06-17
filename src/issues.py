@@ -11,7 +11,7 @@ from src.github import (
     fetch_board_items_graphql, resolve_project_metadata,
     create_issue, move_card, close_issue, update_issue_body,
     post_comment, get_issue_node_id, add_issue_to_project,
-    GitHubError, RateLimitError,
+    GitHubError, RateLimitError, _gh,
 )
 from src.log import log
 
@@ -82,6 +82,8 @@ def _col_from_path(path: Path) -> str:
 def _build_history(repo: str, issue_number: int) -> tuple[str, str]:
     try:
         data = fetch_issue_comments(repo, issue_number)
+    except RateLimitError:
+        raise
     except GitHubError:
         return "", ""
     updated_at = data.get("updatedAt", "")
@@ -451,6 +453,8 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
             # Buscar dados atualizados da issue
             try:
                 data = fetch_issue_comments(repo, issue["id"])
+            except RateLimitError:
+                raise
             except GitHubError:
                 continue
 
@@ -460,20 +464,19 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
 
             # Atualizar body local se diferente
             try:
-                from subprocess import run as sp_run
-                result = sp_run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
-                                 "--json", "body"], capture_output=True, text=True)
-                if result.returncode == 0:
-                    remote_body = json.loads(result.stdout).get("body", "")
-                    filepath = Path(issue["path"])
-                    if filepath.exists():
-                        local_content = filepath.read_text()
-                        new_content = f"# {issue['name']}\n\n{remote_body}\n"
-                        if local_content != new_content:
-                            filepath.write_text(new_content)
-                            issue["l-time"] = str(filepath.stat().st_mtime)
-                            log.debug("[%s] #%s b-sync body atualizado localmente", board_id, issue["id"])
-            except Exception:
+                out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
+                remote_body = json.loads(out).get("body", "")
+                filepath = Path(issue["path"])
+                if filepath.exists():
+                    local_content = filepath.read_text()
+                    new_content = f"# {issue['name']}\n\n{remote_body}\n"
+                    if local_content != new_content:
+                        filepath.write_text(new_content)
+                        issue["l-time"] = str(filepath.stat().st_mtime)
+                        log.debug("[%s] #%s b-sync body atualizado localmente", board_id, issue["id"])
+            except RateLimitError:
+                raise
+            except GitHubError:
                 pass
 
             # Reconstruir history
@@ -510,6 +513,8 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
                         # Atualizar cache de items
                         meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
                         break
+            except RateLimitError:
+                raise
             except GitHubError:
                 pass
 
@@ -540,6 +545,8 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
                     count += 1
                 # Atualizar cache de items
                 meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
+        except RateLimitError:
+            raise
         except GitHubError as e:
             log.warning("Etapa 3: falha ao detectar b-new para '%s': %s", board_id, e)
 
@@ -620,12 +627,11 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     # Buscar body da issue
     body = ""
     try:
-        from subprocess import run as sp_run
-        result = sp_run(["gh", "issue", "view", str(issue["id"]), "--repo", repo,
-                         "--json", "body"], capture_output=True, text=True)
-        if result.returncode == 0:
-            body = json.loads(result.stdout).get("body", "")
-    except Exception:
+        out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
+        body = json.loads(out).get("body", "")
+    except RateLimitError:
+        raise
+    except GitHubError:
         pass
 
     filepath.write_text(f"# {issue['name']}\n\n{body}\n")
@@ -727,7 +733,9 @@ def sync_issues(config: dict) -> bool:
     try:
         count += _etapa3_github_para_snapshot(snapshot, config, deleted_this_cycle)
     except RateLimitError:
-        log.warning("Rate limit na etapa 3 — continuando")
+        log.warning("Rate limit na etapa 3 — salvando snapshot e propagando")
+        _save_snapshot(snapshot)
+        raise
 
     # Etapa 4: Remoção de resíduos
     count += _etapa4_residuos(snapshot, config)
