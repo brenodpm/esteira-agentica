@@ -14,7 +14,7 @@ _tz = timezone(timedelta(hours=-3))
 
 def _log_wake(sleeptime):
     wake = datetime.now(_tz) + timedelta(seconds=sleeptime)
-    log.info("Retorno às %s", wake.strftime("%H:%M:%S"))
+    log.info("[Sleep Time] Retorno às %s", wake.strftime("%H:%M:%S"))
 
 
 def main():
@@ -25,37 +25,37 @@ def main():
     snapshot = sync(config)
 
     sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
-    log.info("Loop iniciado")
+    log.info("[Pipe] Loop iniciado")
     while True:
         try:
             # Verificar virada de dia a cada iteração
             snapshot = _load_snapshot()
             if should_full_sync(snapshot):
-                log.info("Virada de dia detectada — full sync")
+                log.info("[Pipe] Virada de dia detectada — full sync")
                 full_sync(config, snapshot)
 
             synced = sync_issues(config)
             task = pick_task(config)
             if task == TODO_ADVANCE:
-                log.info("Auto-advance realizado — aguardando sync propagar")
+                log.info("[Pipe] Auto-advance realizado — aguardando sync propagar")
             elif task:
-                log.info("Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
+                log.info("[Pipe] Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
                             task["id"], task.get("created_at", "?"), task["name"],
                             task["board_id"], task["column"])
                 run_agent(config, task)
             elif not synced:
-                log.info("Nenhuma tarefa elegível")
-                log.info("intervalo: %ds", sleeptime)
+                log.info("[Pipe] Nenhuma tarefa elegível")
+                log.info("[Pipe] intervalo: %ds", sleeptime)
                 _log_wake(sleeptime)
                 time.sleep(sleeptime)
         except RateLimitError:
-            log.warning("Rate limit — dormindo %ds", sleeptime)
+            log.warning("[Pipe] Rate limit — dormindo %ds", sleeptime)
             _log_wake(sleeptime)
             time.sleep(sleeptime)
         except GitHubError as e:
-            log.error("Erro GitHub: %s", e)
+            log.error("[Pipe] Erro GitHub: %s", e)
         except Exception as e:
-            log.error("Erro inesperado: %s", e, exc_info=True)
+            log.error("[Pipe] Erro inesperado: %s", e, exc_info=True)
             _log_wake(sleeptime)
             time.sleep(sleeptime)
 

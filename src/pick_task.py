@@ -48,7 +48,7 @@ def _advance_from_todo(issue: dict, board_id: str, board: dict) -> bool:
             break
     SNAPSHOT_FILE.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False))
 
-    log.info("[%s] auto-advance #%s: %s → %s", board_id, issue["id"], todo_col, advance_col)
+    log.info("[pick_task] [%s] auto-advance #%s: %s → %s", board_id, issue["id"], todo_col, advance_col)
     return True
 
 

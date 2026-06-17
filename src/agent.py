@@ -259,7 +259,7 @@ def run_agent(config: dict, task: dict):
     prompt = build_prompt(config, task)
     timeout = config["pipe"].get("agent", {}).get("timeout", 1800)
 
-    log.info("Executando agente '%s' para #%s...", agent_name, task["id"])
+    log.info("['%s'] Executando tarefa #%s...", agent_name, task["id"])
 
     cmd = ["kiro-cli", "chat", "--agent", agent_name, "--no-interactive", "-a"]
 
@@ -286,10 +286,10 @@ def run_agent(config: dict, task: dict):
         output = result.stdout + result.stderr
     except subprocess.TimeoutExpired:
         output = f"[TIMEOUT] Agente excedeu {timeout}s"
-        log.error(output)
+        log.error("[Agent] " + output)
     except FileNotFoundError:
         output = "[ERRO] kiro-cli não encontrado no PATH"
-        log.error(output)
+        log.error("[Agent] " + output)
 
     # Salvar log do agente
     log_path = _agent_log_path(task)
@@ -300,7 +300,7 @@ def run_agent(config: dict, task: dict):
     # Extrair e logar credits
     credits_info = _parse_credits(output)
     if credits_info:
-        log.info("Agente '%s' #%s — Credits: %s • Time: %s",
+        log.info("['%s'] #%s — execução concluída — Credits: %s • Time: %s",
                  agent_name, task["id"], credits_info["credits"], credits_info["time"])
     else:
-        log.info("Agente '%s' #%s — execução concluída (credits não capturados)", agent_name, task["id"])
+        log.info("['%s'] #%s — execução concluída (credits não capturados)", agent_name, task["id"])

@@ -708,7 +708,7 @@ def _validate_directories(config: dict) -> None:
 
 def sync_issues(config: dict) -> bool:
     """Sincronização de issues nas 4 etapas. Retorna True se houve ações."""
-    log.info("Sincronização de issues...")
+    log.info("[Sync Issues] Sincronização de issues...")
     _validate_directories(config)
     snapshot = _load_snapshot()
     if "issues" not in snapshot:
@@ -733,7 +733,7 @@ def sync_issues(config: dict) -> bool:
     try:
         count += _etapa3_github_para_snapshot(snapshot, config, deleted_this_cycle)
     except RateLimitError:
-        log.warning("Rate limit na etapa 3 — salvando snapshot e propagando")
+        log.warning("[Sync Issues] Rate limit na etapa 3 — salvando snapshot e propagando")
         _save_snapshot(snapshot)
         raise
 

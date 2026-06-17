@@ -86,9 +86,9 @@ def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
     try:
         push_boards(config, desired_names)
     except RateLimitError:
-        log.warning("Rate limit — push de boards adiado")
+        log.warning("[sync_github] Rate limit — push de boards adiado")
     except GitHubError as e:
-        log.error("Erro GitHub (boards): %s", e)
+        log.error("[sync_github] Erro GitHub (boards): %s", e)
 
 
 def _populate_cache(config: dict, cache: dict) -> None:
@@ -97,12 +97,12 @@ def _populate_cache(config: dict, cache: dict) -> None:
         try:
             resolve_project_metadata(config, board_id, cache)
         except GitHubError as e:
-            log.warning("Cache: board '%s' não resolvido: %s", board_id, e)
+            log.warning("[Cache] board '%s' não resolvido: %s", board_id, e)
 
 
 def sync(config: dict) -> dict:
     """Sincronização inicial. Retorna snapshot atualizado."""
-    log.info("Sync iniciado...")
+    log.info("[Sync] iniciado...")
 
     snapshot = _load_snapshot()
     mtime = _pipe_mtime()
@@ -123,7 +123,7 @@ def sync(config: dict) -> dict:
             "last_sync": now,
         }
         _save_snapshot(snapshot)
-        log.info("Sync concluído (inicialização)")
+        log.info("[Sync] concluído (inicialização)")
     elif snapshot.get("pipe_mtime") != mtime:
         # Fluxo com snapshot — pipe.yml mudou
         _remove_stale_local(desired)
@@ -137,9 +137,9 @@ def sync(config: dict) -> dict:
         snapshot.setdefault("issues", {})
         _populate_cache(config, snapshot["cache"])
         _save_snapshot(snapshot)
-        log.info("Sync concluído (pipe.yml atualizado)")
+        log.info("[Sync] concluído (pipe.yml atualizado)")
     else:
-        log.info("Sync: pipe.yml sem alterações")
+        log.info("[Sync] pipe.yml sem alterações")
 
     return snapshot
 
@@ -171,7 +171,7 @@ def full_sync(config: dict, snapshot: dict) -> None:
         try:
             meta = resolve_project_metadata(config, board_id, cache)
         except GitHubError as e:
-            log.warning("full_sync: board '%s' não resolvido: %s", board_id, e)
+            log.warning("[full_sync] board '%s' não resolvido: %s", board_id, e)
             continue
 
         remote_items = fetch_board_items_graphql(meta["project_id"])
@@ -209,4 +209,4 @@ def full_sync(config: dict, snapshot: dict) -> None:
     # Atualizar last_sync
     snapshot["last_sync"] = datetime.now(timezone.utc).isoformat()
     _save_snapshot(snapshot)
-    log.info("Full sync (virada de dia) concluído")
+    log.info("[full_sync] (virada de dia) concluído")

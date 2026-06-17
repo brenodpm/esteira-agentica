@@ -49,7 +49,7 @@ def _validate_config(data: dict) -> None:
         msg = "ERRO pipe.yml — duplicatas encontradas:\n  " + "\n  ".join(errors)
         print(msg, file=sys.stderr)
         from src.log import log
-        log.error(msg)
+        log.error("[Config]" + msg)
         sys.exit(1)
 
 

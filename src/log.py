@@ -6,6 +6,23 @@ from pathlib import Path
 
 LOG_DIR = Path("logs")
 
+_RED = "\033[31m"
+_BLUE_BOLD = "\033[1;34m"
+_BOLD = "\033[1m"
+_RESET = "\033[0m"
+
+
+class _ColorFormatter(logging.Formatter):
+    def format(self, record):
+        msg = super().format(record)
+        if record.levelno >= logging.WARNING:
+            return f"{_RED}{msg}{_RESET}"
+        if "['" in msg or "[Agent]" in msg:
+            return f"{_BLUE_BOLD}{msg}{_RESET}"
+        import re
+        msg = re.sub(r"\[([^\]]+)\]", f"{_BOLD}[\\1]{_RESET}", msg)
+        return msg
+
 
 def setup() -> logging.Logger:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -20,9 +37,9 @@ def setup() -> logging.Logger:
     file_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
     logger.addHandler(file_handler)
 
-    # Terminal
+    # Terminal (colorido)
     console = logging.StreamHandler()
-    console.setFormatter(logging.Formatter("%(message)s"))
+    console.setFormatter(_ColorFormatter("%(message)s"))
     logger.addHandler(console)
 
     return logger
