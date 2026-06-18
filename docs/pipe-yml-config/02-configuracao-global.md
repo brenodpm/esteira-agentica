@@ -16,7 +16,7 @@ pipe:
 
 ## Campo: pipe.agent.sleeptime
 
-Define o intervalo (em segundos) entre cada ciclo do loop principal da esteira.
+Define o tempo (em segundos) que o agente aguarda quando não há mais o que trabalhar.
 
 ```yaml
 pipe:
