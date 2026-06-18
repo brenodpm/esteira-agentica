@@ -138,8 +138,20 @@ boards:
           advance: concluido
       concluido:
         name: "Concluído"
+        desc: "Issue concluída"
+        agent: generic
+        acao: "Issue concluída, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pela conclusão desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
       cancelado:
         name: "Cancelado"
+        desc: "Issue cancelada"
+        agent: generic
+        acao: "Issue cancelada, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pelo cancelamento desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
+      encerrado:
+        name: "Encerrado"
 
   # ──────────────────────────────────────────────
   # USER STORY — ciclo de uma user story
@@ -202,8 +214,20 @@ boards:
           advance: concluido
       concluido:
         name: "Concluído"
+        desc: "Issue concluída"
+        agent: generic
+        acao: "Issue concluída, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pela conclusão desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
       cancelado:
         name: "Cancelado"
+        desc: "Issue cancelada"
+        agent: generic
+        acao: "Issue cancelada, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pelo cancelamento desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
+      encerrado:
+        name: "Encerrado"
 
   # ──────────────────────────────────────────────
   # TASK — ciclo de uma tarefa de desenvolvimento
@@ -251,8 +275,20 @@ boards:
           falha: desenvolvimento
       concluido:
         name: "Concluído"
+        desc: "Issue concluída"
+        agent: generic
+        acao: "Issue concluída, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pela conclusão desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
       cancelado:
         name: "Cancelado"
+        desc: "Issue cancelada"
+        agent: generic
+        acao: "Issue cancelada, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pelo cancelamento desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
+      encerrado:
+        name: "Encerrado"
 
   # ──────────────────────────────────────────────
   # BUG — correção de bug
@@ -288,8 +324,20 @@ boards:
           falha: correcao
       concluido:
         name: "Concluído"
+        desc: "Issue concluída"
+        agent: generic
+        acao: "Issue concluída, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pela conclusão desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
       cancelado:
         name: "Cancelado"
+        desc: "Issue cancelada"
+        agent: generic
+        acao: "Issue cancelada, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pelo cancelamento desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
+      encerrado:
+        name: "Encerrado"
 
   # ──────────────────────────────────────────────
   # DÉBITO — sanação de débito técnico e ou negocial
@@ -354,5 +402,17 @@ boards:
           cancelar: cancelado
       concluido:
         name: "Concluído"
+        desc: "Issue concluída"
+        agent: generic
+        acao: "Issue concluída, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pela conclusão desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
       cancelado:
         name: "Cancelado"
+        desc: "Issue cancelada"
+        agent: generic
+        acao: "Issue cancelada, precisamos liberar as outras issues\n\n- Vasculhe todas as issues procurando /blocked_by com o numero desta issue e remova-a;\n- Adicione no comentário da issue que o bloqueio foi removido pelo cancelamento desta aqui;\n-Ao concluir avance esta issue para advance"
+        change:
+          advance: encerrado
+      encerrado:
+        name: "Encerrado"

@@ -1,0 +1,13 @@
+{
+  "name": "Generic",
+  "description": "Executa tarefa especifica",
+  "model": "claude-haiku-4.5",
+  "prompt": "",
+  "tools": ["fs_read", "fs_write", "execute_bash", "grep", "glob"],
+  "allowedTools": ["fs_read", "grep", "glob"],
+  "resources": [
+    "file://.kiro/SYS_CONTEXT.md"
+  ],
+  "keyboardShortcut": "ctrl+shift+4",
+  "welcomeMessage": "Generic. O que devo fazer?"
+}
