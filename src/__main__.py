@@ -18,6 +18,9 @@ def _log_wake(sleeptime):
 
 
 def main():
+    log.info("")
+    log.info("       .....:: ESTEIRA AGÊNTICA ::.....")
+    log.info("")
     config = load_config("pipe.yml")
     cleanup_logs(config.get("ttl-log", 10))
 
