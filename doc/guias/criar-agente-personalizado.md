@@ -21,6 +21,36 @@ Um agente é um executor especializado que processa issues conforme sua área de
 }
 ```
 
+**Como este prompt aparece formatado:**
+
+```
+Você é um especialista em X.
+
+## Papel
+
+Faça Y quando receber Z.
+
+## O que você faz
+
+- Lista de responsabilidades
+- Máximo 5 itens
+
+## O que você NÃO faz
+
+- Lista de limites
+- Máximo 5 itens
+
+## Execução
+
+1. Passo 1
+2. Passo 2
+3. Passo 3
+
+## Artefatos que você produz
+
+- Tipo de saída esperada
+```
+
 ## Como Criar um Agente
 
 ### 1. Definir Responsabilidades
@@ -98,6 +128,37 @@ Este exemplo cria um agente de documentação que gera README para repositórios
   "prompt": "Você gera documentação clara e concisa.\n\n## Papel\n\nGerar README.md para repositórios baseado no código existente.\n\n## O que você faz\n\n- Analisa estrutura do projeto\n- Gera README com instalação e uso\n- Inclui exemplos básicos\n\n## O que você NÃO faz\n\n- Não documenta APIs complexas\n- Não gera docs técnicos detalhados\n\n## Execução\n\n1. Ler estrutura do projeto\n2. Identificar linguagem e ferramentas  \n3. Gerar README.md na raiz\n\n## Artefatos que você produz\n\n- README.md na raiz do projeto",
   "tools": ["fs_read", "fs_write", "glob", "code"]
 }
+```
+
+**Como este prompt aparece formatado:**
+```
+Você gera documentação clara e concisa.
+
+## Papel
+
+Gerar README.md para repositórios baseado no código existente.
+
+## O que você faz
+
+- Analisa estrutura do projeto
+- Gera README com instalação e uso
+- Inclui exemplos básicos
+
+## O que você NÃO faz
+
+- Não documenta APIs complexas
+- Não gera docs técnicos detalhados
+
+## Execução
+
+1. Ler estrutura do projeto
+2. Identificar linguagem e ferramentas  
+3. Gerar README.md na raiz
+
+## Artefatos que você produz
+
+- README.md na raiz do projeto
+```
 ```
 
 **2. Configuração em `pipe.yml`:**
