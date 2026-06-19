@@ -56,6 +56,8 @@ def main():
             time.sleep(sleeptime)
         except GitHubError as e:
             log.error("[Pipe] Erro GitHub: %s", e)
+            _log_wake(sleeptime)
+            time.sleep(sleeptime)
         except Exception as e:
             log.error("[Pipe] Erro inesperado: %s", e, exc_info=True)
             _log_wake(sleeptime)

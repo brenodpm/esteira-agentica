@@ -273,7 +273,10 @@ def _etapa2_snapshot_para_github(snapshot: dict, config: dict) -> int:
 
             except RateLimitError:
                 log.warning("Rate limit durante etapa 2 — parando")
-                break
+                for idx in reversed(to_remove):
+                    issues.pop(idx)
+                _save_snapshot(snapshot)
+                raise
             except GitHubError as e:
                 log.error("[%s] Erro GitHub issue #%s: %s", board_id, issue.get("id"), e)
                 if "não encontrada no repo" in str(e):

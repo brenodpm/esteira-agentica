@@ -170,11 +170,15 @@ def full_sync(config: dict, snapshot: dict) -> None:
     for board_id in config["boards"]:
         try:
             meta = resolve_project_metadata(config, board_id, cache)
+            remote_items = fetch_board_items_graphql(meta["project_id"])
+        except RateLimitError:
+            log.warning("[full_sync] Rate limit no board '%s' — salvando e propagando", board_id)
+            snapshot["last_sync"] = datetime.now(timezone.utc).isoformat()
+            _save_snapshot(snapshot)
+            raise
         except GitHubError as e:
             log.warning("[full_sync] board '%s' não resolvido: %s", board_id, e)
             continue
-
-        remote_items = fetch_board_items_graphql(meta["project_id"])
 
         # Atualizar cache de items
         items_cache = meta.setdefault("items", {})
