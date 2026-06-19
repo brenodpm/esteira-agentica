@@ -129,6 +129,6 @@ As seguintes ações ainda **não estão implementadas** mas são necessárias:
 | Ação | Trigger | Efeito no GitHub |
 |------|---------|------------------|
 | Criar issue | Arquivo novo em coluna (status `l-new`) | Criar issue no repo + adicionar ao project board |
-| Mover issue | Arquivo movido de coluna (status `l-mv`) | Mover card para nova coluna no project |
+| Mover issue | Arquivo movido de coluna (status `l-sync`) | Mover card para nova coluna no project |
 | Deletar issue | Arquivo removido (status `l-del`) | Fechar issue no GitHub |
 | Postar comentário | Arquivo `*-write.md` com conteúdo | Postar body como comentário na issue e limpar o arquivo |

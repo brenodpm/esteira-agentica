@@ -77,10 +77,8 @@ Reescrita completa do projeto `esteira-agentica-ruim` com lógica nova.
 | `ok` | Sincronizado (existe local e no board) |
 | `l-del` | Removido localmente, precisa ser removido no board |
 | `b-del` | Removido no board, precisa ser removido localmente |
-| `l-mv` | Movido localmente, precisa ser movido no board |
-| `b-mv` | Movido no board, precisa ser movido localmente |
-| `l-sync` | Arquivo local modificado, precisa atualizar o board |
-| `b-sync` | Board modificado, precisa atualizar localmente |
+| `l-sync` | Arquivo local modificado (body, coluna ou write), precisa atualizar o board |
+| `b-sync` | Board modificado (body, coluna ou comentários), precisa atualizar localmente |
 
 ## Regras de Detecção (QUANDO/ENTÃO)
 
@@ -92,8 +90,8 @@ QUANDO `last_sync` for do dia anterior → full sync, `last_sync` = 00:00 UTC do
 - QUANDO issue no snapshot mas não no diretório → `status=l-del`, `l-time=agora`
 
 ### Detecção de movimentação
-- QUANDO issue no snapshot mas em coluna local diferente → `status=l-mv`, atualiza paths
-- QUANDO issue no snapshot com `status=ok` e coluna no board diferente → `status=b-mv`
+- QUANDO issue no snapshot mas em coluna local diferente → `status=l-sync`, atualiza paths
+- QUANDO issue no snapshot com `status=ok` e coluna no board diferente → `status=b-sync`
 
 ### Detecção de modificação
 - QUANDO mtime do slug ou write > `l-time` → `status=l-sync`, `l-time=mtime`
@@ -111,8 +109,7 @@ QUANDO `last_sync` for do dia anterior → full sync, `last_sync` = 00:00 UTC do
 |--------|------|
 | `b-new` | Cria 3 arquivos (slug, history, write), preenche campos, status→ok |
 | `b-del` | Remove 3 arquivos locais, remove do snapshot |
-| `b-sync` | Atualiza history com comentários, atualiza body se mudou, status→ok |
-| `b-mv` | Move 3 arquivos para nova coluna, atualiza history, status→ok |
+| `b-sync` | Atualiza body/history, move arquivos se coluna mudou, status→ok |
 
 ### Pendências (local → GitHub) — TODO
 
@@ -120,8 +117,7 @@ QUANDO `last_sync` for do dia anterior → full sync, `last_sync` = 00:00 UTC do
 |--------|------|
 | `l-new` | Criar issue no GitHub, apagar arquivo original, recriar com padrão correto, status→ok |
 | `l-del` | Fechar issue no GitHub, remover do board, remover do snapshot |
-| `l-mv` | Mover card no board, atualizar column, checar write, status→ok |
-| `l-sync` | Atualizar body se principal mudou, checar write (postar comentário se conteúdo), status→ok |
+| `l-sync` | Mover card se coluna mudou, atualizar body se mudou, checar write (postar comentário se conteúdo), status→ok |
 
 ## Regra de Órfãos (ao mover slug)
 
@@ -152,10 +148,38 @@ QUANDO slug for movido de diretório:
 
 ## Otimização de API
 
-- `last_sync` salvo no snapshot — próximos ciclos usam `gh issue list --search "updated:>=date"`
-- Apenas issues modificadas são processadas
-- `fetch_board_items` ainda busca lista completa (necessário para detectar `b-del`)
-- Rate limit: 5000 pontos/hora (GraphQL), 5000 req/hora (REST), janela de 1 hora
+### Consumo por ciclo de sync (5 boards, 20 issues)
+
+**Antes (código original):**
+
+| Operação | Chamadas/ciclo |
+|----------|----------------|
+| `_resolve_owner` | 5 (1 por board) |
+| `_list_projects` | 5 |
+| `gh project item-list` (REST) | 5 |
+| `gh issue list --search updated` | 1 |
+| `gh issue list --json createdAt` | 1 |
+| Por movimentação (`move_card`) | 3-4 cada |
+| **Total estimado** | ~17 + 4×moves |
+
+**Depois (com cache):**
+
+| Operação | Chamadas/ciclo |
+|----------|----------------|
+| `resolve_project_metadata` | 0 (cache hit) |
+| `fetch_board_items_graphql` (1 query/board, apenas na virada de dia) | 0 no loop normal |
+| `gh issue list --search updated` | 1 |
+| Por movimentação (`move_card`) | 1 (só mutation, item_id do cache) |
+| **Total estimado** | ~1 + 1×moves |
+
+**Redução**: ~75-90% menos chamadas API por ciclo normal. Full sync (virada de dia): 5 queries GraphQL + 1 REST. Mutations com 1s de intervalo entre si.
+
+### Estratégia de cache
+
+- `project_id`, `status_field_id`, `options` e `items` cacheados no snapshot
+- Cache populado na inicialização e atualizado incrementalmente
+- Virada de dia refresh completo do cache via `full_sync()`
+- Rate limit: `_mutation_throttle()` garante 1s entre mutations consecutivas
 
 ## Tratamento de Erros
 

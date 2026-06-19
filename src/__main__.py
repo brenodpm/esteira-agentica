@@ -2,8 +2,8 @@ import time
 
 from src.config import load_config
 from src.log import log, cleanup_logs
-from src.sync import sync
-from src.issues import sync_issues, fix_issues
+from src.sync import sync, should_full_sync, full_sync, _load_snapshot, _save_snapshot
+from src.issues import sync_issues
 from src.pick_task import pick_task, TODO_ADVANCE
 from src.agent import run_agent
 from src.github import RateLimitError, GitHubError
@@ -12,13 +12,20 @@ from src.github import RateLimitError, GitHubError
 def main():
     config = load_config("pipe.yml")
     cleanup_logs(config.get("ttl-log", 10))
-    sync(config)
+
+    # sync() roda apenas uma vez ao iniciar
+    snapshot = sync(config)
 
     sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
     log.info("Loop iniciado")
     while True:
         try:
-            fix_issues()
+            # Verificar virada de dia a cada iteração
+            snapshot = _load_snapshot()
+            if should_full_sync(snapshot):
+                log.info("Virada de dia detectada — full sync")
+                full_sync(config, snapshot)
+
             synced = sync_issues(config)
             task = pick_task(config)
             if task == TODO_ADVANCE:

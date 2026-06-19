@@ -170,12 +170,14 @@ def build_prompt(config: dict, task: dict) -> str:
     lines.append(f"- Verifique se as tarefas em `/blocked_by` foram concluídas; se NÃO: anote em `{task['write_path']}` e vá direto para o passo de cleanup")
     lines.append(f"- Se houver dúvidas: escreva em `{task['write_path']}` e adicione `/need_human` no body da issue, depois vá para cleanup")
     lines.append(f"- Se houver demanda bloqueante: crie um card em `{needs_dir}`")
+    lines.append(f"- Ao criar novos cards em `.pipe/boards/`, nomeie SEM prefixo numérico (ex: `minha-tarefa.md`, NÃO `1-minha-tarefa.md`). A esteira atribui o ID automaticamente.")
     lines.append("")
 
     # --- COMMIT & PUSH ---
     lines.append("## 3. Commit e push (execute via shell)")
     lines.append("```bash")
-    lines.append("git add -A")
+    lines.append("git add -A -- ':!.pipe'")
+    lines.append("# NUNCA versione o diretório .pipe/ — ele é gerenciado pela esteira")
     lines.append(f'git commit -m "{column.get("name", task["column"])}: {task["name"]}"')
     lines.append(f"git push -u origin {branch_name}")
     lines.append("```")
@@ -218,12 +220,14 @@ def build_prompt(config: dict, task: dict) -> str:
     lines.append("")
 
     # --- TRANSIÇÕES ---
-    lines.append("## Transição de coluna")
-    lines.append("Mova o arquivo da issue para a coluna correta:")
+    lines.append("## Transição de coluna (OBRIGATÓRIO)")
+    lines.append("Ao finalizar, você DEVE mover os 3 arquivos da issue (`.md`, `-history.md`, `-write.md`) para a coluna de destino.")
+    lines.append("Se não mover, a esteira vai re-executar esta mesma tarefa no próximo ciclo.")
+    lines.append("")
     change = column.get("change", {})
     for condition, target_col in change.items():
         target_dir = str(BOARDS_DIR / board_id / target_col)
-        lines.append(f"- se **{condition}** → mover arquivo para `{target_dir}/`")
+        lines.append(f"- **{condition}** → `mv {task['path']} {task['history_path']} {task['write_path']} {target_dir}/`")
 
     return "\n".join(lines)
 
@@ -291,7 +295,8 @@ def run_agent(config: dict, task: dict):
     # Salvar log do agente
     log_path = _agent_log_path(task)
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(output, encoding="utf-8")
+    clean_output = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[A-Za-z]", "", output)
+    log_path.write_text(f"═══ PROMPT ═══\n{prompt}\n\n═══ OUTPUT ═══\n{clean_output}\n", encoding="utf-8")
 
     # Extrair e logar credits
     credits_info = _parse_credits(output)

@@ -28,35 +28,39 @@ git:
     # Se aponta para um prefixo de outro flow (ex: "release"), a branch exata deve ser
     # informada na issue via label "branch:<nome>" ou no body "<!-- branch: release/v1.0 -->".
 
-    release:
-      prefix: release
-      description: "Branch de release do projeto"
-      create: main       # branch fixa
-      merge: main        # branch fixa
-    feature:
-      prefix: feature
-      description: "Branch de feature de desenvolvimento"
-      create: main       # branch fixa
-      merge: release     # prefixo → resolver via issue
-    epic:
-      prefix: epic
-      description: "Branch para épicos — planejamento e documentação"
-      create: main       # branch fixa
-      merge: release     # prefixo → resolver via issue
     hotfix:
       prefix: hotfix
       description: "Usada para correção de bugs em produção"
       create: main       # branch fixa
       merge: main        # branch fixa
+
+    release:
+      prefix: release
+      description: "Branch de release do projeto"
+      create: main       # branch fixa
+      merge: main        # branch fixa
+
+    epic:
+      prefix: epic
+      description: "Branch para épicos — planejamento e documentação"
+      create: main       # branch fixa
+      merge: release     # prefixo → resolver via issue
+    feature:
+      prefix: feature
+      description: "Branch de feature de desenvolvimento"
+      create: epic       # branch fixa
+      merge: epic     # prefixo → resolver via issue
     bugfix:
       prefix: fix
       description: "Usada para correção de bugs em homologação"
-      create: release    # prefixo → resolver via issue
-      merge: release     # prefixo → resolver via issue
+      create: epic    # prefixo → resolver via issue
+      merge: epic     # prefixo → resolver via issue
 
 boards:
   bugs: bug
   needs: debito
+  alter-remote-boards: true
+  allow-del-remote-issue: true
 
   # ──────────────────────────────────────────────
   # EPIC — ciclo completo de um épico
@@ -81,33 +85,34 @@ boards:
         agent: product
         effort: high
         gitevents: [create]
-        acao: "Entender o épico, produzir visão de produto, problem-space e épicos\n\n# Atenção, nesta etapa não se cria issues no board, apenas as documentações"
+        acao: "Entender a demanda, entrevistar o usuário (via write e history), criar ou alterar as documentações. Atenção, não crie issues em nenhum board nesta etapa!"
         change:
           advance: aprovacao-negocio
       aprovacao-negocio:
         name: "Aprovação Negócio"
         desc: "Humano aprova os artefatos negociais"
-        change:
-          advance: criacao-stories
-          reprovar: analise-negocio
       criacao-stories:
         name: "Criação de User Stories"
         desc: "Agente de negócio cria as user stories do épico"
         agent: product
-        acao: "Criar user stories detalhadas com critérios de aceitação para o épico aprovado"
+        acao: "Ler todas as documentações, criar as respectivas user stories no board e bloquear este epico com o id das uses histories criadas"
         change:
           advance: aguardando-stories
       aguardando-stories:
         name: "Aguardando Stories"
         desc: "Aguarda a conclusão de todas as user stories vinculadas"
         change:
-          advance: homologacao
+          advance: release
+      release:
+        name: "Criação de User Stories"
+        desc: "Agente de negócio cria as user stories do épico"
+        agent: product
+        acao: "Ler todas as documentações, criar as respectivas user stories no board e bloquear este epico com o id das uses histories criadas"
+        change:
+          advance: aguardando-stories        
       homologacao:
         name: "Homologação"
         desc: "Humano efetua homologação"
-        change:
-          advance: publicacao
-          reprovar: aguardando-stories
       publicacao:
         name: "Publicação"
         desc: "Agente DevOps publica em produção"
@@ -157,23 +162,23 @@ boards:
         desc: "Agente de requisitos levanta requisitos e complementa documentações"
         agent: requirements
         gitevents: [create]
-        acao: "Levantar requisitos funcionais e não-funcionais, complementar documentações negociais com critérios técnicos"
+        acao: "Entender o que foi solicitado; Entrevistar o usuario (via write e history) para fechar lacunas; quando não houver mais dúvidas criar ou alterar as documentações do ponto de vista negocial, sempre que terminar, mover a issue para advance"
         change:
-          advance: arquitetura
+          advance: validacao-negocial
+      validacao-negocial:
+        name: "Validação Negocial"
+        desc: "Humano valida documentação de negócio"
       arquitetura:
         name: "Arquitetura"
         desc: "Agente de arquitetura define a arquitetura da story"
         agent: architecture
         effort: high
-        acao: "Definir arquitetura técnica, ADRs e constraints para a story"
+        acao: "Entender o que foi solicitado; Entrevistar o usuario (via write e history) para fechar lacunas; quando não houver mais dúvidas criar ou alterar as documentações arquiteturais"
         change:
-          advance: validacao-artefatos
-      validacao-artefatos:
-        name: "Validação de Artefatos"
-        desc: "Humano valida os artefatos de requisitos e arquitetura"
-        change:
-          advance: planejamento-tecnico
-          reprovar: requisitos
+          advance: validacao-arquitetura
+      validacao-arquitetura:
+        name: "Validação Arquitetural"
+        desc: "Humano valida as documentações arquiteturais"
       planejamento-tecnico:
         name: "Planejamento Técnico"
         desc: "Agente líder técnico define as tarefas de desenvolvimento"
@@ -192,7 +197,7 @@ boards:
         agent: tech-lead
         effort: low
         gitevents: [merge]
-        acao: "Criar change file documentando todas as alterações entregues na story"
+        acao: "Criar change file documentando todas as alterações entregues na story, verificar se todos os bloqueios do Epico foram concluídos, se sim mova o epico para a release"
         change:
           advance: concluido
       concluido:
@@ -207,7 +212,7 @@ boards:
   task:
     name: "Tasks"
     todo: backlog
-    priority: 1
+    priority: 2
     flow: feature
     columns:
       backlog:
@@ -221,7 +226,7 @@ boards:
         desc: "Agente de qualidade escreve os casos de teste"
         agent: quality
         gitevents: [create]
-        acao: "Escrever casos de teste baseados nos critérios de aceitação da task"
+        acao: "Escrever casos de teste baseados nos critérios de aceitação da task! não altere código; não execute teste"
         change:
           advance: desenvolvimento
       desenvolvimento:
@@ -229,31 +234,21 @@ boards:
         desc: "Agente de engenharia cria código e cobertura de testes (TDD)"
         agent: engineering
         effort: high
-        acao: "Implementar a task seguindo TDD, garantindo cobertura dos casos de teste definidos"
+        acao: "Implementar a task seguindo TDD, garantindo cobertura dos casos de teste definidos; Quando concluído, fazer merge request com a branch de story original"
+        gitevents: [merge]
         change:
-          advance: execucao-testes
-          bloquear: bloqueado
+          advance: code-review
+      code-review:
+        name: "Code Review"
+        desc: "Humano faz code review do PR"
       execucao-testes:
         name: "Execução de Testes"
         desc: "Agente de qualidade executa os casos de teste"
         agent: quality
-        gitevents: [merge]
-        acao: "Executar casos de teste, registrar resultados e reportar falhas"
-        change:
-          advance: code-review
-          falha: desenvolvimento
-      code-review:
-        name: "Code Review"
-        desc: "Humano faz code review do PR"
+        acao: "Executar casos de teste, registrar resultados e reportar falhas. Não altera código; não cria nem altera caso de teste"
         change:
           advance: concluido
-          reprovar: desenvolvimento
-      bloqueado:
-        name: "Bloqueado"
-        desc: "Task bloqueada por dependência"
-        change:
-          advance: desenvolvimento
-          cancelar: cancelado
+          falha: desenvolvimento
       concluido:
         name: "Concluído"
       cancelado:
@@ -261,7 +256,6 @@ boards:
 
   # ──────────────────────────────────────────────
   # BUG — correção de bug
-  # Prioridade 2 (mesmo nível que tasks)
   # ──────────────────────────────────────────────
   bug:
     name: "Bugs"
@@ -298,27 +292,62 @@ boards:
         name: "Cancelado"
 
   # ──────────────────────────────────────────────
-  # DÉBITO — sanação de débito técnico ou negocial
-  # Prioridade 2 (mesmo nível que tasks)
+  # DÉBITO — sanação de débito técnico e ou negocial
   # ──────────────────────────────────────────────
   debito:
     name: "Débitos"
-    todo: backlog
-    priority: 2
+    priority: 1
     flow: bugfix
     columns:
-      backlog:
-        name: Backlog
-        desc: "Débito registrado aguardando resolução"
+      humano:
+        name: "Humano"
+        desc: "Débito abeto para o humano"
+      product:
+        name: "Agente product"
+        desc: "Débito abeto para o agente product"
+        agent: product
+        gitevents: [create, merge]
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
-          advance: resolucao
+          advance: requirements
+          concluido: concluido
           cancelar: cancelado
-      resolucao:
-        name: "Resolução"
-        desc: "Agente ou humano sana o débito"
+      requirements:
+        name: "Agente requirements"
+        desc: "Débito abeto para o agente requirements"
+        agent: requirements
+        gitevents: [create, merge]
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
+        change:
+          advance: architecture
+          concluido: concluido
+          cancelar: cancelado
+      architecture:
+        name: "Agente architecture"
+        desc: "Débito abeto para o agente architecture"
+        agent: architecture
+        gitevents: [create, merge]
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
+        change:
+          advance: engineering
+          concluido: concluido
+          cancelar: cancelado
+      engineering:
+        name: "Agente engineering"
+        desc: "Débito abeto para o agente engineering"
         agent: engineering
         gitevents: [create, merge]
-        acao: "Sanar o débito técnico ou negocial conforme descrito, documentando a solução"
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
+        change:
+          advance: quality
+          concluido: concluido
+          cancelar: cancelado
+      quality:
+        name: "Agente quality"
+        desc: "Débito abeto para o agente quality"
+        agent: quality
+        gitevents: [create, merge]
+        acao: "Se debito aberto para seu nome: analisar solicitação e se pertinente, atualizar apenas documentações;\n Se debito aberto para agente anterior a você: verificar mudanças realizadas e atualizar as de sua responsabilidades; se debito foi aberto por você: verificar se todos os debitos foram sanados, se sim desbloquear tarefa original e concluir esta, se não, atualizar debito e devolver ao agente necessário\n\n TODOS: sempre anotar o que foi modificado em write"
         change:
           advance: concluido
           cancelar: cancelado
