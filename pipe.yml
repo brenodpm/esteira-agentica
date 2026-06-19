@@ -67,7 +67,7 @@ boards:
   # Prioridade 0: board principal
   # ──────────────────────────────────────────────
   epic:
-    name: "Epics"
+    name: "Pipe - Epics"
     todo: backlog
     priority: 4
     flow: epic
@@ -158,7 +158,7 @@ boards:
   # Prioridade 1: iniciado após demandas
   # ──────────────────────────────────────────────
   story:
-    name: "User Stories"
+    name: "Pipe - User Stories"
     todo: backlog
     priority: 3
     flow: epic
@@ -234,7 +234,7 @@ boards:
   # Prioridade 2
   # ──────────────────────────────────────────────
   task:
-    name: "Tasks"
+    name: "Pipe - Tasks"
     todo: backlog
     priority: 2
     flow: feature
@@ -294,7 +294,7 @@ boards:
   # BUG — correção de bug
   # ──────────────────────────────────────────────
   bug:
-    name: "Bugs"
+    name: "Pipe - Bugs"
     todo: backlog
     priority: 0
     flow: bugfix
@@ -343,7 +343,7 @@ boards:
   # DÉBITO — sanação de débito técnico e ou negocial
   # ──────────────────────────────────────────────
   debito:
-    name: "Débitos"
+    name: "Pipe - Débitos"
     priority: 1
     flow: bugfix
     todo: humano
