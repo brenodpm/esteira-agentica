@@ -159,7 +159,6 @@ Gerar README.md para repositórios baseado no código existente.
 
 - README.md na raiz do projeto
 ```
-```
 
 **2. Configuração em `pipe.yml`:**
 ```yaml
