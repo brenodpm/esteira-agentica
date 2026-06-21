@@ -3,11 +3,11 @@ from datetime import datetime, timezone, timedelta
 
 from src.config import load_config
 from src.log import log, cleanup_logs
-from src.sync import sync, should_full_sync, full_sync, _load_snapshot, _save_snapshot
+from src.sync import sync, full_sync, _load_snapshot, _save_snapshot
 from src.issues import sync_issues
 from src.pick_task import pick_task, TODO_ADVANCE
 from src.agent import run_agent
-from src.github import RateLimitError, GitHubError
+from src.github import RateLimitError, GitHubError, sleep_until_rate_limit_reset
 
 _tz = timezone(timedelta(hours=-3))
 
@@ -26,15 +26,22 @@ def main():
     # sync() roda apenas uma vez ao iniciar
     snapshot = sync(config)
 
+    # Full sync na inicialização — garante estado correto
+    log.info("[Pipe] Full sync inicial")
+    full_sync(config, snapshot)
+
     sleeptime = config["pipe"].get("agent", {}).get("sleeptime", 5)
-    log.info("[Pipe] Loop iniciado")
+    current_day = datetime.now(timezone.utc).date()
+    log.info("[Pipe] Loop iniciado (dia: %s)", current_day)
     while True:
         try:
-            # Verificar virada de dia a cada iteração
-            snapshot = _load_snapshot()
-            if should_full_sync(snapshot):
-                log.info("[Pipe] Virada de dia detectada — full sync")
+            # Detectar virada REAL de dia (meia-noite UTC passou)
+            today = datetime.now(timezone.utc).date()
+            if today > current_day:
+                log.info("[Pipe] Virada de dia detectada (%s → %s) — full sync", current_day, today)
+                snapshot = _load_snapshot()
                 full_sync(config, snapshot)
+                current_day = today
 
             synced = sync_issues(config)
             task = pick_task(config)
@@ -51,9 +58,8 @@ def main():
                 _log_wake(sleeptime)
                 time.sleep(sleeptime)
         except RateLimitError:
-            log.warning("[Pipe] Rate limit — dormindo %ds", sleeptime)
-            _log_wake(sleeptime)
-            time.sleep(sleeptime)
+            log.warning("[Pipe] Rate limit — consultando reset time")
+            sleep_until_rate_limit_reset()
         except GitHubError as e:
             log.error("[Pipe] Erro GitHub: %s", e)
             _log_wake(sleeptime)

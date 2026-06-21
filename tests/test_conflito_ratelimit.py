@@ -88,8 +88,9 @@ class TestRateLimit:
     @patch("src.issues.update_issue_body")
     @patch("src.issues._build_history", return_value=("", ""))
     def test_rate_limit_para_etapa2(self, mock_hist, mock_body, mock_move, tmp_path):
-        """Rate limit durante etapa 2 para o processamento sem crash."""
+        """Rate limit durante etapa 2 propaga RateLimitError e preserva status."""
         from src.issues import _etapa2_snapshot_para_github
+        import pytest
 
         board_dir = tmp_path / ".pipe" / "boards" / "task" / "dev"
         issue_file = board_dir / "42-issue.md"
@@ -105,11 +106,11 @@ class TestRateLimit:
             "l-time": "999", "b-time": "2025-01-01T00:00:00Z", "status": "l-sync",
         }]}, "cache": {}}
 
-        # Não deve levantar exceção
-        count = _etapa2_snapshot_para_github(snapshot, _config())
+        # Deve propagar RateLimitError para o main loop tratar
+        with pytest.raises(RateLimitError):
+            _etapa2_snapshot_para_github(snapshot, _config())
 
-        # Deve parar sem crash, issue permanece com status l-sync
-        assert count == 0
+        # Issue permanece l-sync para retry no próximo ciclo
         assert snapshot["issues"]["task"][0]["status"] == "l-sync"
 
     @patch("src.issues.fetch_updated_issues", side_effect=RateLimitError("rate limit"))

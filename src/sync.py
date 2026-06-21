@@ -203,6 +203,7 @@ def full_sync(config: dict, snapshot: dict) -> None:
                     "b-time": item["updated_at"],
                     "created_at": None,
                     "status": "b-new",
+                    "_body": item.get("body", ""),
                 })
 
         # Issues no snapshot mas não no GitHub → b-del

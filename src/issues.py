@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.github import (
-    fetch_board_items, fetch_issue_comments, fetch_updated_issues,
+    fetch_issue_comments, fetch_updated_issues,
     fetch_board_items_graphql, resolve_project_metadata,
     create_issue, move_card, close_issue, update_issue_body,
     post_comment, get_issue_node_id, add_issue_to_project,
@@ -297,33 +297,30 @@ def _action_l_sync(issue: dict, config: dict, board_id: str, cache: dict) -> Non
     repo = config["repo"]
     col_name = config["boards"][board_id]["columns"][issue["column"]].get("name", issue["column"])
 
-    # Mover card se necessário
+    # Mover card
     if issue["id"]:
         move_card(config, issue["id"], board_id, col_name, cache)
-        # Cachear item_id
-        meta = cache.get(board_id, {})
-        items_cache = meta.get("items", {})
-        if str(issue["id"]) not in items_cache:
-            items_cache[str(issue["id"])] = None  # será resolvido por move_card
 
-    # Atualizar body se mudou
-    filepath = Path(issue["path"])
-    if filepath.exists() and issue["id"]:
-        lines = filepath.read_text().splitlines()
-        body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
-        update_issue_body(repo, issue["id"], body)
-
-    # Postar write como comentário e limpar
+    # Postar write como comentário ANTES de atualizar body (write modifica updatedAt)
     write_path = Path(issue["write_path"])
+    wrote = False
     if write_path.exists():
         content = write_path.read_text().strip()
         if content and issue["id"]:
             _append_write_to_log(issue["id"], content)
             post_comment(repo, issue["id"], content)
             write_path.write_text("")
+            wrote = True
 
-    # Reconstruir history
-    if issue["id"]:
+    # Atualizar body apenas se arquivo local mudou
+    filepath = Path(issue["path"])
+    if filepath.exists() and issue["id"]:
+        lines = filepath.read_text().splitlines()
+        body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
+        update_issue_body(repo, issue["id"], body)
+
+    # Reconstruir history apenas se houve write (novo comentário adicionado)
+    if wrote and issue["id"]:
         history_path = Path(issue["history_path"])
         history, updated_at = _build_history(repo, issue["id"])
         history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -425,7 +422,12 @@ def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> 
 
 
 def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycle: set = None) -> int:
-    """Busca issues modificadas no GitHub e aplica no snapshot/local. Retorna ações."""
+    """Busca issues modificadas no GitHub e aplica no snapshot/local. Retorna ações.
+
+    Otimizado: 1 REST (updated issues) + 1 GraphQL por board (items com body/status).
+    Usa body do board items em vez de chamada separada por issue.
+    fetch_issue_comments apenas para issues realmente modificadas (history).
+    """
     repo = config["repo"]
     last_sync = snapshot.get("last_sync")
     cache = snapshot.setdefault("cache", {})
@@ -447,111 +449,103 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
     for board_id, issues in snapshot.get("issues", {}).items():
         name_to_id = _col_name_to_id(config, board_id)
 
+        # UMA ÚNICA chamada GraphQL por board — busca items, body, status, item_id
+        try:
+            meta = resolve_project_metadata(config, board_id, cache)
+            remote_items = fetch_board_items_graphql(meta["project_id"])
+        except RateLimitError:
+            raise
+        except GitHubError as e:
+            log.warning("Etapa 3: falha ao buscar items do board '%s': %s", board_id, e)
+            continue
+
+        # Indexar items remotos por number para acesso O(1)
+        remote_by_number = {}
+        items_cache = meta.setdefault("items", {})
+        for item in remote_items:
+            remote_by_number[item["number"]] = item
+            items_cache[str(item["number"])] = item["item_id"]
+
+        # Processar issues atualizadas
         for issue in issues:
             if issue["status"] != "ok":
                 continue
             if issue["id"] not in updated_numbers:
                 continue
 
-            # Buscar dados atualizados da issue
-            try:
-                data = fetch_issue_comments(repo, issue["id"])
-            except RateLimitError:
-                raise
-            except GitHubError:
+            remote_item = remote_by_number.get(issue["id"])
+            if not remote_item:
                 continue
 
-            remote_updated = data.get("updatedAt", "")
+            remote_updated = remote_item["updated_at"]
             if not remote_updated or remote_updated <= (issue.get("b-time") or ""):
                 continue
 
-            # Atualizar body local se diferente
+            # Body vem do GraphQL — sem chamada extra
+            remote_body = remote_item.get("body", "")
+            filepath = Path(issue["path"])
+            if filepath.exists():
+                local_content = filepath.read_text()
+                new_content = f"# {issue['name']}\n\n{remote_body}\n"
+                if local_content != new_content:
+                    filepath.write_text(new_content)
+                    issue["l-time"] = str(filepath.stat().st_mtime)
+                    log.debug("[%s] #%s b-sync body atualizado localmente", board_id, issue["id"])
+
+            # History — UMA chamada REST por issue que realmente mudou
             try:
-                out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
-                remote_body = json.loads(out).get("body", "")
-                filepath = Path(issue["path"])
-                if filepath.exists():
-                    local_content = filepath.read_text()
-                    new_content = f"# {issue['name']}\n\n{remote_body}\n"
-                    if local_content != new_content:
-                        filepath.write_text(new_content)
-                        issue["l-time"] = str(filepath.stat().st_mtime)
-                        log.debug("[%s] #%s b-sync body atualizado localmente", board_id, issue["id"])
+                data = fetch_issue_comments(repo, issue["id"])
+                comments = data.get("comments", [])
+                if comments:
+                    history_path = Path(issue["history_path"])
+                    lines = []
+                    for c in comments:
+                        lines.append(f"{c['author']['login']} - {c['createdAt']}")
+                        lines.append(c["body"])
+                        lines.append("--------")
+                        lines.append("")
+                    history_path.write_text("\n".join(lines))
             except RateLimitError:
                 raise
             except GitHubError:
                 pass
 
-            # Reconstruir history
-            history_path = Path(issue["history_path"])
-            comments = data.get("comments", [])
-            if comments:
-                lines = []
-                for c in comments:
-                    lines.append(f"{c['author']['login']} - {c['createdAt']}")
-                    lines.append(c["body"])
-                    lines.append("--------")
-                    lines.append("")
-                history_path.write_text("\n".join(lines))
-
-            # Recriar write em branco
+            # Write em branco se não existe
             write_path = Path(issue["write_path"])
             write_path.parent.mkdir(parents=True, exist_ok=True)
             if not write_path.exists():
                 write_path.write_text("")
 
-            # Checar se coluna mudou no board (somente se status era ok)
-            # Precisa buscar coluna atual do item no project
-            try:
-                meta = resolve_project_metadata(config, board_id, cache)
-                items = fetch_board_items_graphql(meta["project_id"])
-                for item in items:
-                    if item["number"] == issue["id"]:
-                        remote_col_name = item["status"]
-                        remote_col_id = name_to_id.get(remote_col_name)
-                        if remote_col_id and remote_col_id != issue["column"]:
-                            # Mover arquivos locais para nova coluna
-                            log.debug("[%s] #%s b-sync coluna remota mudou (%s → %s)", board_id, issue["id"], issue["column"], remote_col_id)
-                            _move_local_files(issue, board_id, remote_col_id)
-                        # Atualizar cache de items
-                        meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
-                        break
-            except RateLimitError:
-                raise
-            except GitHubError:
-                pass
+            # Coluna — já temos do remote_item (sem chamada extra)
+            remote_col_name = remote_item["status"]
+            remote_col_id = name_to_id.get(remote_col_name)
+            if remote_col_id and remote_col_id != issue["column"]:
+                log.debug("[%s] #%s b-sync coluna remota mudou (%s → %s)", board_id, issue["id"], issue["column"], remote_col_id)
+                _move_local_files(issue, board_id, remote_col_id)
 
             issue["b-time"] = remote_updated
             log.debug("[%s] #%s b-sync aplicado (b-time=%s)", board_id, issue["id"], remote_updated)
             count += 1
 
-        # Detectar issues novas no board (b-new)
-        try:
-            meta = resolve_project_metadata(config, board_id, cache)
-            remote_items = fetch_board_items_graphql(meta["project_id"])
-            snapshot_ids = {i["id"] for i in issues}
-            for item in remote_items:
-                if item["number"] not in snapshot_ids and item["number"] not in deleted_this_cycle:
-                    issues.append({
-                        "id": item["number"],
-                        "name": _sanitize_name(item["title"]),
-                        "column": name_to_id.get(item["status"], item["status"]),
-                        "path": None,
-                        "history_path": None,
-                        "write_path": None,
-                        "l-time": None,
-                        "b-time": item["updated_at"],
-                        "created_at": None,
-                        "status": "b-new",
-                    })
-                    log.debug("[%s] #%s detectado b-new (%s)", board_id, item["number"], item["title"])
-                    count += 1
-                # Atualizar cache de items
-                meta.setdefault("items", {})[str(item["number"])] = item["item_id"]
-        except RateLimitError:
-            raise
-        except GitHubError as e:
-            log.warning("Etapa 3: falha ao detectar b-new para '%s': %s", board_id, e)
+        # Detectar issues novas (b-new) — já temos remote_items, sem chamada extra
+        snapshot_ids = {i["id"] for i in issues}
+        for item in remote_items:
+            if item["number"] not in snapshot_ids and item["number"] not in deleted_this_cycle:
+                issues.append({
+                    "id": item["number"],
+                    "name": _sanitize_name(item["title"]),
+                    "column": name_to_id.get(item["status"], item["status"]),
+                    "path": None,
+                    "history_path": None,
+                    "write_path": None,
+                    "l-time": None,
+                    "b-time": item["updated_at"],
+                    "created_at": None,
+                    "status": "b-new",
+                    "_body": item.get("body", ""),
+                })
+                log.debug("[%s] #%s detectado b-new (%s)", board_id, item["number"], item["title"])
+                count += 1
 
     return count
 
@@ -627,15 +621,16 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     history_path = col_path / f"{base}-history.md"
     write_path = col_path / f"{base}-write.md"
 
-    # Buscar body da issue
-    body = ""
-    try:
-        out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
-        body = json.loads(out).get("body", "")
-    except RateLimitError:
-        raise
-    except GitHubError:
-        pass
+    # Body: usar do cache se disponível, senão buscar
+    body = issue.pop("_body", None)
+    if body is None:
+        try:
+            out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
+            body = json.loads(out).get("body", "")
+        except RateLimitError:
+            raise
+        except GitHubError:
+            body = ""
 
     filepath.write_text(f"# {issue['name']}\n\n{body}\n")
 
