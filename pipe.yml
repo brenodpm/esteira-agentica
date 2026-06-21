@@ -1,9 +1,19 @@
 pipe:
+  sleeptime: 7200
   agent:
     timeout: 1200
-    sleeptime: 7200
-
-ttl-log: 10
+  github:
+    throttle: 2        # intervalo base entre chamadas API (segundos)
+    max-throttle: 30   # intervalo máximo no backoff exponencial (segundos)
+    retry-after: 60    # fallback de espera quando secondary rate limit sem header
+    cooldown: 600      # segundos sem throttle antes de regredir um nível
+    penalty:
+      base: 3600       # duração base do penalty box (segundos) — 1h
+      max: 86400       # duração máxima do penalty box (segundos) — 24h
+      cooldown: 3600   # segundos sem penalidade antes de regredir um nível — 1h
+  log:
+    ttl: 10
+    level: INFO
 
 effort:
   low:

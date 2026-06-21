@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.github import (
     push_boards, resolve_project_metadata, fetch_board_items_graphql,
-    GitHubError, RateLimitError,
+    GitHubError, RateLimitError, sleep_until_rate_limit_reset, is_in_penalty,
 )
 from src.log import log
 
@@ -72,8 +72,11 @@ def _rmdir(path: Path) -> None:
     path.rmdir()
 
 
-def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
-    """Cria/atualiza boards remotos (somente se alter-remote-boards=true)."""
+def _sync_github(config: dict, desired: dict[str, list[str]], cache: dict = None) -> None:
+    """Cria/atualiza boards remotos (somente se alter-remote-boards=true).
+
+    Se cache fornecido, popula com metadata retornada pelo push_boards.
+    """
     if not config["boards_meta"].get("alter-remote-boards"):
         log.debug("[sync_github] alter-remote-boards=false — pulando")
         return
@@ -84,7 +87,12 @@ def _sync_github(config: dict, desired: dict[str, list[str]]) -> None:
         desired_names[board_id] = [cols[c].get("name", c) for c in col_ids]
     log.debug("[sync_github] Desired names: %s", {k: v for k, v in desired_names.items()})
     try:
-        push_boards(config, desired_names)
+        metadata = push_boards(config, desired_names)
+        if cache is not None and metadata:
+            for board_id, meta in metadata.items():
+                existing_items = cache.get(board_id, {}).get("items", {})
+                meta["items"] = existing_items
+                cache[board_id] = meta
     except RateLimitError:
         log.warning("[sync_github] Rate limit — push de boards adiado")
     except GitHubError as e:
@@ -111,9 +119,10 @@ def sync(config: dict) -> dict:
     if not snapshot:
         # Fluxo sem snapshot — criação do projeto
         _ensure_local_dirs(desired)
-        _sync_github(config, desired)
         cache = {}
-        _populate_cache(config, cache)
+        if not is_in_penalty():
+            _sync_github(config, desired, cache)
+            _populate_cache(config, cache)
         now = datetime.now(timezone.utc).isoformat()
         snapshot = {
             "pipe_mtime": mtime,
@@ -128,14 +137,15 @@ def sync(config: dict) -> dict:
         # Fluxo com snapshot — pipe.yml mudou
         _remove_stale_local(desired)
         _ensure_local_dirs(desired)
-        _sync_github(config, desired)
+        cache = snapshot.setdefault("cache", {})
+        if not is_in_penalty():
+            _sync_github(config, desired, cache)
+            _populate_cache(config, cache)
         now = datetime.now(timezone.utc).isoformat()
         snapshot["pipe_mtime"] = mtime
         snapshot["boards"] = desired
         snapshot["last_sync"] = now
-        snapshot.setdefault("cache", {})
         snapshot.setdefault("issues", {})
-        _populate_cache(config, snapshot["cache"])
         _save_snapshot(snapshot)
         log.info("[Sync] concluído (pipe.yml atualizado)")
     else:
@@ -159,10 +169,11 @@ def should_full_sync(snapshot: dict) -> bool:
 
 def full_sync(config: dict, snapshot: dict) -> None:
     """Sincronização por virada de dia: atualiza boards, busca items, marca b-new/b-del."""
-    desired = _desired_from_config(config)
+    if is_in_penalty():
+        log.info("[full_sync] Penalty ativo — pulando")
+        return
 
-    # Atualizar boards remotos se alter-remote-boards=true
-    _sync_github(config, desired)
+    desired = _desired_from_config(config)
 
     cache = snapshot.setdefault("cache", {})
 
@@ -171,11 +182,16 @@ def full_sync(config: dict, snapshot: dict) -> None:
         try:
             meta = resolve_project_metadata(config, board_id, cache)
             remote_items = fetch_board_items_graphql(meta["project_id"])
-        except RateLimitError:
-            log.warning("[full_sync] Rate limit no board '%s' — salvando e propagando", board_id)
-            snapshot["last_sync"] = datetime.now(timezone.utc).isoformat()
+        except RateLimitError as e:
+            log.info("[full_sync] Throttle no board '%s' — aguardando", board_id)
             _save_snapshot(snapshot)
-            raise
+            sleep_until_rate_limit_reset(config.get("pipe", {}).get("sleeptime", 1800), retry_after=e.retry_after)
+            try:
+                meta = resolve_project_metadata(config, board_id, cache)
+                remote_items = fetch_board_items_graphql(meta["project_id"])
+            except (RateLimitError, GitHubError) as e:
+                log.info("[full_sync] board '%s' ainda em throttle — pulando neste ciclo", board_id)
+                continue
         except GitHubError as e:
             log.warning("[full_sync] board '%s' não resolvido: %s", board_id, e)
             continue
