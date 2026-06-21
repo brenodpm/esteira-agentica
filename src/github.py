@@ -25,6 +25,54 @@ class GitHubError(Exception):
 class RateLimitError(GitHubError):
     """Rate limit atingido."""
 
+    def __init__(self, msg="GitHub API rate limit excedido", reset_at: float = 0):
+        super().__init__(msg)
+        self.reset_at = reset_at
+
+
+def get_rate_limit_reset() -> float:
+    """Consulta GitHub API para obter timestamp Unix de quando o rate limit reseta.
+
+    Retorna o timestamp do reset mais próximo (menor entre graphql e core).
+    Em caso de falha, retorna 0.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", "rate_limit"], capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            return 0
+        data = json.loads(result.stdout)
+        resources = data.get("resources", {})
+        resets = []
+        for key in ("graphql", "core"):
+            r = resources.get(key, {})
+            if r.get("remaining", 1) == 0:
+                resets.append(r.get("reset", 0))
+        return min(resets) if resets else resources.get("graphql", {}).get("reset", 0)
+    except Exception:
+        return 0
+
+
+def sleep_until_rate_limit_reset() -> None:
+    """Consulta o reset time do rate limit e dorme até lá (+5s de margem)."""
+    reset_ts = get_rate_limit_reset()
+    if reset_ts:
+        wait = reset_ts - time.time() + 5
+        if wait > 0:
+            from datetime import datetime, timezone, timedelta
+            _tz = timezone(timedelta(hours=-3))
+            wake = datetime.now(_tz) + timedelta(seconds=wait)
+            log.warning("[GitHub] Rate limit reset em %ds — retorno às %s", int(wait), wake.strftime("%H:%M:%S"))
+            time.sleep(wait)
+            return
+    # Fallback: 60s se não conseguiu obter reset time
+    from datetime import datetime, timezone, timedelta
+    _tz = timezone(timedelta(hours=-3))
+    wake = datetime.now(_tz) + timedelta(seconds=60)
+    log.warning("[GitHub] Não foi possível obter reset time — retorno às %s", wake.strftime("%H:%M:%S"))
+    time.sleep(60)
+
 
 def _gh(*args) -> str:
     result = subprocess.run(["gh", *args], capture_output=True, text=True)
@@ -33,7 +81,7 @@ def _gh(*args) -> str:
 
     if "rate limit" in output.lower() or "rate limit" in error.lower():
         log.warning("[GitHub] Rate limit na chamada: gh %s", " ".join(args[:3]))
-        raise RateLimitError("GitHub API rate limit excedido")
+        raise RateLimitError("GitHub API rate limit excedido", reset_at=get_rate_limit_reset())
 
     if result.returncode != 0:
         log.debug("[GitHub] gh %s → erro: %s", " ".join(args[:3]), error or output)
@@ -52,7 +100,7 @@ def _gql(query: str, **variables) -> dict:
     error = result.stderr.strip()
 
     if "rate limit" in output.lower() or "rate limit" in error.lower():
-        raise RateLimitError("GitHub API rate limit excedido")
+        raise RateLimitError("GitHub API rate limit excedido", reset_at=get_rate_limit_reset())
 
     if not output:
         raise GitHubError(error or "Resposta vazia do GraphQL")
