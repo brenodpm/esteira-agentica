@@ -1,5 +1,5 @@
 pipe:
-  sleeptime: 7200
+  sleeptime: 1800
   agent:
     timeout: 1200
   github:
@@ -177,16 +177,6 @@ boards:
           advance: validacao-negocial
       validacao-negocial:
         name: "Validação Negocial"
-        desc: "Humano valida documentação de negócio"
-      ux:
-        name: "Prototipação"
-        desc: "Agente de UX gera protótipo"
-        agent: ux
-        acao: "Entender o que foi solicitado; Entrevistar o usuario (via write e history) para fechar lacunas; quando não houver mais dúvidas criar ou alterar os protótipos, sempre que terminar, mover a issue para advance"
-        change:
-          advance: validacao-prototipo
-      validacao-prototipo:
-        name: "Validação Prototipo"
         desc: "Humano valida documentação de negócio"
       arquitetura:
         name: "Arquitetura"
