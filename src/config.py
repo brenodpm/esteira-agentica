@@ -68,5 +68,5 @@ def load_config(path: str) -> dict:
         "pipe": data.get("pipe", {}),
         "git": data.get("git", {}),
         "effort": data.get("effort", {}),
-        "ttl-log": data.get("ttl-log", 10),
+        "ttl-log": data.get("pipe", {}).get("log", {}).get("ttl", 10),
     }

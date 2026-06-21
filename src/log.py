@@ -45,6 +45,12 @@ def setup() -> logging.Logger:
     return logger
 
 
+def set_level(level: str) -> None:
+    """Define nível de log a partir de string (DEBUG, INFO, WARNING, ERROR)."""
+    numeric = getattr(logging, level.upper(), logging.INFO)
+    log.setLevel(numeric)
+
+
 log = setup()
 
 

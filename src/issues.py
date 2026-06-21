@@ -272,7 +272,7 @@ def _etapa2_snapshot_para_github(snapshot: dict, config: dict) -> int:
                     count += 1
 
             except RateLimitError:
-                log.warning("Rate limit durante etapa 2 — parando")
+                log.info("[Sync Issues] Throttle na etapa 2 — salvando snapshot")
                 for idx in reversed(to_remove):
                     issues.pop(idx)
                 _save_snapshot(snapshot)
@@ -421,17 +421,16 @@ def _action_l_del(issue: dict, config: dict, board_id: str, allow_del: bool) -> 
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycle: set = None) -> int:
+def _etapa3_github_para_snapshot(snapshot: dict, config: dict) -> int:
     """Busca issues modificadas no GitHub e aplica no snapshot/local. Retorna ações.
 
-    Otimizado: 1 REST (updated issues) + 1 GraphQL por board (items com body/status).
+    Otimizado: 1 REST (updated issues) + GraphQL apenas para boards com updates.
     Usa body do board items em vez de chamada separada por issue.
     fetch_issue_comments apenas para issues realmente modificadas (history).
     """
     repo = config["repo"]
     last_sync = snapshot.get("last_sync")
     cache = snapshot.setdefault("cache", {})
-    deleted_this_cycle = deleted_this_cycle or set()
     count = 0
 
     if not last_sync:
@@ -447,9 +446,13 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
         return count
 
     for board_id, issues in snapshot.get("issues", {}).items():
+        # Skip board se nenhuma issue dele foi atualizada
+        board_numbers = {i["id"] for i in issues if i["status"] == "ok"}
+        if not (board_numbers & updated_numbers):
+            continue
+
         name_to_id = _col_name_to_id(config, board_id)
 
-        # UMA ÚNICA chamada GraphQL por board — busca items, body, status, item_id
         try:
             meta = resolve_project_metadata(config, board_id, cache)
             remote_items = fetch_board_items_graphql(meta["project_id"])
@@ -526,26 +529,6 @@ def _etapa3_github_para_snapshot(snapshot: dict, config: dict, deleted_this_cycl
             issue["b-time"] = remote_updated
             log.debug("[%s] #%s b-sync aplicado (b-time=%s)", board_id, issue["id"], remote_updated)
             count += 1
-
-        # Detectar issues novas (b-new) — já temos remote_items, sem chamada extra
-        snapshot_ids = {i["id"] for i in issues}
-        for item in remote_items:
-            if item["number"] not in snapshot_ids and item["number"] not in deleted_this_cycle:
-                issues.append({
-                    "id": item["number"],
-                    "name": _sanitize_name(item["title"]),
-                    "column": name_to_id.get(item["status"], item["status"]),
-                    "path": None,
-                    "history_path": None,
-                    "write_path": None,
-                    "l-time": None,
-                    "b-time": item["updated_at"],
-                    "created_at": None,
-                    "status": "b-new",
-                    "_body": item.get("body", ""),
-                })
-                log.debug("[%s] #%s detectado b-new (%s)", board_id, item["number"], item["title"])
-                count += 1
 
     return count
 
@@ -717,21 +700,14 @@ def sync_issues(config: dict) -> bool:
     # Etapa 1: Local → Snapshot
     _etapa1_local_para_snapshot(snapshot, config)
 
-    # Coletar IDs que serão deletados neste ciclo (guard contra re-criação)
-    deleted_this_cycle = set()
-    for issues in snapshot.get("issues", {}).values():
-        for i in issues:
-            if i["status"] == "l-del":
-                deleted_this_cycle.add(i["id"])
-
     # Etapa 2: Snapshot → GitHub
     count += _etapa2_snapshot_para_github(snapshot, config)
 
     # Etapa 3: GitHub → Snapshot
     try:
-        count += _etapa3_github_para_snapshot(snapshot, config, deleted_this_cycle)
+        count += _etapa3_github_para_snapshot(snapshot, config)
     except RateLimitError:
-        log.warning("[Sync Issues] Rate limit na etapa 3 — salvando snapshot e propagando")
+        log.info("[Sync Issues] Throttle na etapa 3 — salvando snapshot")
         _save_snapshot(snapshot)
         raise
 
@@ -742,4 +718,22 @@ def sync_issues(config: dict) -> bool:
     snapshot["last_sync"] = _now_iso()
     _save_snapshot(snapshot)
 
+    return count > 0
+
+
+def sync_issues_local(config: dict) -> bool:
+    """Sincronização local apenas (etapas 1 e 4). Usado durante penalty box."""
+    log.info("[Sync Issues] Sincronização local (penalty ativo)...")
+    _validate_directories(config)
+    snapshot = _load_snapshot()
+    if "issues" not in snapshot:
+        snapshot["issues"] = {}
+
+    # Etapa 1: Local → Snapshot
+    _etapa1_local_para_snapshot(snapshot, config)
+
+    # Etapa 4: Remoção de resíduos locais (b-new cria arquivos, b-del remove)
+    count = _etapa4_residuos(snapshot, config)
+
+    _save_snapshot(snapshot)
     return count > 0
