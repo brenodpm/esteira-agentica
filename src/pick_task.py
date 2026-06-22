@@ -84,12 +84,21 @@ def pick_task(config: dict) -> dict | str | None:
 
     for board_id, board in boards_sorted:
         issues = issues_map.get(board_id, [])
+
+        # parallel: false → bloqueia auto-advance se já existe issue ativa (fora de todo/terminais)
+        block_auto_advance = False
+        if board.get("parallel") is False:
+            todo_col = board.get("todo")
+            terminal = {"encerrado", "cancelado"}
+            inactive = {todo_col} | terminal if todo_col else terminal
+            block_auto_advance = any(i["column"] not in inactive for i in issues if i.get("id"))
+
         candidates = [i for i in issues if i["status"] == "ok" and i.get("id")]
         candidates.sort(key=lambda i: i.get("created_at") or "")
 
         columns = board["columns"]
         for issue in candidates:
-            if _advance_from_todo(issue, board_id, board):
+            if not block_auto_advance and _advance_from_todo(issue, board_id, board):
                 return TODO_ADVANCE
 
             col = columns.get(issue["column"], {})
