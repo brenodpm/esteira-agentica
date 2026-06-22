@@ -575,7 +575,15 @@ def _etapa4_residuos(snapshot: dict, config: dict) -> int:
                 count += 1
 
             elif issue["status"] == "b-new":
-                _action_b_new(issue, config, board_id, repo)
+                try:
+                    _action_b_new(issue, config, board_id, repo)
+                except (RateLimitError, GitHubError) as e:
+                    log.warning("[%s] b-new #%s falhou (%s) — será retentado", board_id, issue["id"], e)
+                    # Salvar snapshot parcial para não perder progresso das anteriores
+                    for idx in reversed(to_remove):
+                        issues.pop(idx)
+                    _save_snapshot(snapshot)
+                    return count
                 log.info("[%s] b-new #%s %s criado localmente", board_id, issue["id"], issue["name"])
                 count += 1
 
@@ -604,31 +612,38 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     history_path = col_path / f"{base}-history.md"
     write_path = col_path / f"{base}-write.md"
 
-    # Body: usar do cache se disponível, senão buscar
+    # Body: usar do cache (_body) se disponível, senão buscar (offline-safe)
     body = issue.pop("_body", None)
     if body is None:
-        try:
-            out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
-            body = json.loads(out).get("body", "")
-        except RateLimitError:
-            raise
-        except GitHubError:
-            body = ""
+        if filepath.exists():
+            # Arquivo já existe no disco (retry após falha anterior) — usar conteúdo local
+            lines = filepath.read_text().splitlines()
+            body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
+        else:
+            try:
+                out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
+                body = json.loads(out).get("body", "")
+            except (RateLimitError, GitHubError):
+                body = ""
 
     filepath.write_text(f"# {issue['name']}\n\n{body}\n")
 
-    # History
-    history, updated_at = _build_history(repo, issue["id"])
+    # History: fallback offline se API indisponível
+    try:
+        history, updated_at = _build_history(repo, issue["id"])
+    except RateLimitError:
+        history, updated_at = "", ""
     history_path.write_text(history)
 
     # Write (vazio)
-    write_path.write_text("")
+    if not write_path.exists():
+        write_path.write_text("")
 
     issue["path"] = str(filepath)
     issue["history_path"] = str(history_path)
     issue["write_path"] = str(write_path)
     issue["l-time"] = str(filepath.stat().st_mtime)
-    issue["b-time"] = updated_at or _now_iso()
+    issue["b-time"] = updated_at or issue.get("b-time") or _now_iso()
     issue["status"] = "ok"
 
 
