@@ -11,7 +11,7 @@ from src.github import (
     fetch_board_items_graphql, resolve_project_metadata,
     create_issue, move_card, close_issue, update_issue_body,
     post_comment, get_issue_node_id, add_issue_to_project,
-    GitHubError, RateLimitError, _gh,
+    GitHubError, RateLimitError, _gh, is_in_penalty,
 )
 from src.log import log
 
@@ -616,9 +616,10 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
     body = issue.pop("_body", None)
     if body is None:
         if filepath.exists():
-            # Arquivo já existe no disco (retry após falha anterior) — usar conteúdo local
             lines = filepath.read_text().splitlines()
             body = "\n".join(lines[2:]).strip() if len(lines) > 2 else ""
+        elif is_in_penalty():
+            body = ""
         else:
             try:
                 out = _gh("issue", "view", str(issue["id"]), "--repo", repo, "--json", "body")
@@ -628,11 +629,14 @@ def _action_b_new(issue: dict, config: dict, board_id: str, repo: str) -> None:
 
     filepath.write_text(f"# {issue['name']}\n\n{body}\n")
 
-    # History: fallback offline se API indisponível
-    try:
-        history, updated_at = _build_history(repo, issue["id"])
-    except RateLimitError:
+    # History: pular API se em penalty
+    if is_in_penalty():
         history, updated_at = "", ""
+    else:
+        try:
+            history, updated_at = _build_history(repo, issue["id"])
+        except RateLimitError:
+            history, updated_at = "", ""
     history_path.write_text(history)
 
     # Write (vazio)

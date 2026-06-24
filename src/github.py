@@ -72,7 +72,7 @@ def _load_state():
     if not state:
         return
     _api_interval = max(float(state.get("interval", _base_interval)), _base_interval)
-    _last_throttle_time = float(state.get("last_hit", 0))
+    _last_throttle_time = max(float(state.get("last_hit", 0)), time.time())
     _penalty_duration = int(state.get("penalty_duration", 0))
     _penalty_until = float(state.get("penalty_until", 0))
     _penalty_last_hit = float(state.get("penalty_last_hit", 0))
@@ -123,7 +123,10 @@ def _penalty_activate():
 def _penalty_regress():
     """Regride ou desativa o penalty box."""
     global _penalty_duration, _penalty_until, _last_throttle_time
-    elapsed = time.time() - _penalty_last_hit
+    # Medir cooldown a partir do fim do penalty (não do last_hit),
+    # para evitar regressão indevida ao reiniciar o processo.
+    ref = max(_penalty_until, _penalty_last_hit)
+    elapsed = time.time() - ref
     if elapsed >= _penalty_cooldown and _penalty_duration > 0:
         _penalty_duration = _penalty_duration // 2
         if _penalty_duration < _penalty_base:
