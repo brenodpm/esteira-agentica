@@ -76,6 +76,10 @@ def main():
             if today > current_day:
                 log.info("[Pipe] Virada de dia detectada (%s → %s) — full sync", current_day, today)
                 snapshot = _load_snapshot()
+                for issues in snapshot.get("issues", {}).values():
+                    for issue in issues:
+                        issue["b-time"] = None
+                _save_snapshot(snapshot)
                 full_sync(config, snapshot)
                 current_day = today
 

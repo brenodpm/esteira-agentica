@@ -11,11 +11,12 @@ _SNAPSHOT_FILE = Path(".pipe/snapshot.json")
 
 _last_mutation_time = 0.0
 _last_api_time = 0.0
-_base_interval = 2.0
-_api_interval = 2.0  # intervalo entre chamadas (segundos) — adaptativo
+_start_interval = 16.0  # intervalo inicial (evita rate limit ao ligar)
+_base_interval = 2.0   # piso mínimo após regressão
+_api_interval = 16.0   # intervalo entre chamadas (segundos) — adaptativo
 _max_throttle = 30.0
 _default_retry_after = 60
-_cooldown = 600  # segundos sem throttle antes de regredir (10 min)
+_cooldown = 3600  # segundos sem throttle antes de regredir (1h)
 _last_throttle_time = 0.0  # timestamp da última progressão
 
 # Penalty box
@@ -29,14 +30,15 @@ _penalty_last_hit = 0.0  # timestamp da última ativação
 
 def configure(config: dict) -> None:
     """Inicializa parâmetros de throttle e penalty a partir de pipe.github."""
-    global _base_interval, _api_interval, _max_throttle, _default_retry_after, _cooldown
+    global _start_interval, _base_interval, _api_interval, _max_throttle, _default_retry_after, _cooldown
     global _penalty_base, _penalty_max, _penalty_cooldown
     gh_cfg = config.get("pipe", {}).get("github", {})
+    _start_interval = float(gh_cfg.get("start-throttle", 16))
     _base_interval = float(gh_cfg.get("throttle", 2))
-    _api_interval = _base_interval
+    _api_interval = _start_interval
     _max_throttle = float(gh_cfg.get("max-throttle", 30))
     _default_retry_after = int(gh_cfg.get("retry-after", 60))
-    _cooldown = int(gh_cfg.get("cooldown", 600))
+    _cooldown = int(gh_cfg.get("cooldown", 3600))
     pen = gh_cfg.get("penalty", {})
     _penalty_base = int(pen.get("base", 3600))
     _penalty_max = int(pen.get("max", 86400))
@@ -120,7 +122,7 @@ def _penalty_activate():
 
 def _penalty_regress():
     """Regride ou desativa o penalty box."""
-    global _penalty_duration, _penalty_until, _api_interval, _last_throttle_time
+    global _penalty_duration, _penalty_until, _last_throttle_time
     elapsed = time.time() - _penalty_last_hit
     if elapsed >= _penalty_cooldown and _penalty_duration > 0:
         _penalty_duration = _penalty_duration // 2
@@ -128,10 +130,7 @@ def _penalty_regress():
             _penalty_duration = 0
         log.info("[Penalty] Regredido — nível %ds", _penalty_duration)
     _penalty_until = 0
-    # Reset throttle ao sair do penalty
-    _api_interval = _base_interval
-    _last_throttle_time = 0.0
-    log.info("[Penalty] Desativado — throttle reset para %.1fs", _api_interval)
+    log.info("[Penalty] Desativado — throttle mantido em %.1fs", _api_interval)
     _save_state()
 
 
