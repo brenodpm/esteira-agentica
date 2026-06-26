@@ -37,7 +37,6 @@ class ChangeItem:
     id: str = None       # id da issue no board (None quando ainda não existe)
     identifier: str = None  # identificador local enquanto não há id de board
     board: str = None       # board_id ao qual a issue pertence
-    reference: str = None   # referência auxiliar do item
     uuid: str = None        # id único na fila (atribuído por add/addAll)
 
     @staticmethod
@@ -46,7 +45,7 @@ class ChangeItem:
 
     @classmethod
     def of(cls, event, id: str = None, identifier: str = None,
-           board: str = None, reference: str = None) -> "ChangeItem":
+           board: str = None) -> "ChangeItem":
         """Cria um ChangeItem com timestamp atual."""
         return cls(
             timestamp=cls.now(),
@@ -54,18 +53,19 @@ class ChangeItem:
             id=id,
             identifier=identifier,
             board=board,
-            reference=reference,
         )
 
     def same_target(self, other: "ChangeItem") -> bool:
-        """True se representa o mesmo alvo de sincronismo (para deduplicação)."""
-        if self.event != other.event or self.board != other.board:
-            return False
-        if self.id is not None and other.id is not None:
-            return self.id == other.id
-        if self.identifier is not None and other.identifier is not None:
-            return self.identifier == other.identifier
-        return False
+        """True se representa o mesmo alvo de sincronismo (para deduplicação).
+
+        Considera duplicado quando event, id, identifier e board são iguais.
+        """
+        return (
+            self.event == other.event
+            and self.id == other.id
+            and self.identifier == other.identifier
+            and self.board == other.board
+        )
 
 
 @dataclass
@@ -176,7 +176,7 @@ class Board:
         remote_issues = self._port.list_issues(board_id)
         remote_by_id = {str(i.id): i for i in remote_issues}
 
-        snapshot_issues = snapshot.issues(board_id)
+        snapshot_issues = snapshot.issues
         snapshot_by_id = {
             str(i["id"]): i for i in snapshot_issues if i.get("id") is not None
         }

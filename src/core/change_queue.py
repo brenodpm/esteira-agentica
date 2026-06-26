@@ -16,7 +16,7 @@ Se o processo falhar antes do remove(), o mesmo item volta no próximo getNext()
 
 import json
 import uuid as uuidlib
-from dataclasses import asdict
+from dataclasses import asdict, fields as dataclass_fields
 from pathlib import Path
 
 from src.core.board import ChangeItem
@@ -37,7 +37,9 @@ class ChangeQueue:
         if not QUEUE_FILE.exists():
             return []
         raw = json.loads(QUEUE_FILE.read_text(encoding="utf-8"))
-        return [ChangeItem(**item) for item in raw]
+        fields = {f.name for f in dataclass_fields(ChangeItem)}
+        # Ignora campos desconhecidos (ex: arquivos de versões anteriores)
+        return [ChangeItem(**{k: v for k, v in item.items() if k in fields}) for item in raw]
 
     def _write(self, items: list[ChangeItem]) -> None:
         PIPE_DIR.mkdir(parents=True, exist_ok=True)

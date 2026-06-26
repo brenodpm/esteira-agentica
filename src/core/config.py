@@ -62,6 +62,12 @@ def _validate_boards(boards: dict):
             _require(col, "name", f"boards.{board_id}.columns.{col_id}")
 
 
+def _validate_log(log_cfg: dict):
+    ttl = log_cfg.get("ttl")
+    if ttl is not None and (not isinstance(ttl, int) or ttl < 1):
+        raise ConfigError("log.ttl: deve ser inteiro >= 1")
+
+
 def check_config() -> dict:
     """Valida e retorna configuração do pipe.yml."""
     _validate_env()
@@ -74,6 +80,9 @@ def check_config() -> dict:
     
     if not config:
         raise ConfigError("pipe.yml está vazio")
+    
+    if "log" in config:
+        _validate_log(config["log"])
     
     git = _require(config, "git", "pipe.yml")
     _validate_git(git)

@@ -1,3 +1,8 @@
+log:
+  dir: logs
+  ttl: 10
+  level: INFO
+
 git:
   repo:
     main: git@github.com:brenodpm/esteira-agentica.git

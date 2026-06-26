@@ -1,6 +1,6 @@
 # Contexto e Decisões — Esteira Agêntica v2
 
-Data: 2026-06-25
+Data: 2026-06-26
 
 ## Visão Geral
 
@@ -11,9 +11,10 @@ Esteira automatizada de agentes de IA com arquitetura hexagonal. Reescrita do pr
 ```
 src/
 ├── core/               # Domínio - regras de negócio
-│   ├── log.py          # Logging (terminal + arquivo)
+│   ├── log.py          # Logging dual (terminal resumo + arquivo detalhe)
 │   ├── config.py       # Validação do pipe.yml
-│   └── board.py        # Board core + BoardPort (interface)
+│   ├── board.py        # Board core + BoardPort (interface)
+│   └── snapshot.py     # Snapshot por board (.pipe/boards/<id>/snapshot.json)
 ├── adapters/           # Implementações de ports
 │   └── github_board.py # Adapter para GitHub Projects V2
 └── __main__.py         # Orquestração
@@ -31,7 +32,11 @@ src/
 main()
 ├── check_config()      # Valida pipe.yml e variáveis de ambiente
 ├── startup()           # Configura SSH e clona repositórios
-├── first_board_sync()  # Sincroniza estrutura de boards (com retry de penalty)
+├── first_board_sync()  # Cria diretórios, sync local e remoto
+│   ├── Cria .pipe/boards/<board_id>/<col_id>/
+│   ├── Sincroniza snapshot local (mapa de colunas)
+│   ├── sync_boards() remoto (com retry de penalty)
+│   └── detect_board_changes() por board
 │
 └── while running:      # Loop principal (TODO)
     ├── sync_board()
@@ -43,6 +48,11 @@ main()
 ## Configuração (pipe.yml)
 
 ```yaml
+log:
+  dir: logs                    # Caminho dos arquivos de log
+  ttl: 10                      # Dias de retenção dos logs
+  level: INFO                  # Nível de log
+
 git:
   repo:
     <id-repo>: <url>          # Repositórios a clonar (SSH)
@@ -89,10 +99,20 @@ boards:
 ## Decisões Técnicas
 
 ### Log (core)
-- Singleton com dual output: terminal (colorido) + arquivo
-- Arquivo diário: `logs/yyyy-MM-dd.log`
-- Formato: `[Módulo] Mensagem`
-- Chamadas de API: `[throttle] valor - ação`
+- Singleton com dual output: terminal (resumo colorido) + arquivo (detalhe)
+- Terminal: `[Módulo] mensagem` com cores por nível
+- Arquivo: `timestamp - LEVEL - module - mensagem | {extras}`
+- Extras são kwargs opcionais que vão só para o arquivo (ex: project_id, query, error)
+- Exceções via `exc=` incluem traceback completo no arquivo
+- Arquivo diário: `logs/yyyy-MM-dd.json`
+- Cleanup automático: remove logs com mais de `ttl` dias
+- `separator()`: linha em branco no arquivo para demarcar início de execução
+- Parâmetros configuráveis via pipe.yml: `log.dir`, `log.ttl`, `log.level`
+
+### Snapshot (core)
+- Um snapshot por board: `.pipe/boards/<board_id>/snapshot.json`
+- Estrutura: `{board: {col_id: col_name}, issues: [...], last_sync: "iso"}`
+- `Snapshot(board_id)` — instanciado por board
 
 ### SSH
 - Chave copiada para `~/.ssh/id_pipe` (não sobrescreve chaves existentes)
@@ -107,7 +127,7 @@ boards:
 - Core (`Board`) não conhece implementação específica
 - Port (`BoardPort`) define interface para adapters
 - `sync_boards()` recebe lista ordenada por prioridade: `[{id, name, columns}, ...]`
-- `PenaltyException(wait_seconds)` para sinalizar rate limit
+- `PenaltyException(wait_seconds)` para sinalizar rate limit (mínimo 1s)
 
 ## GitHub Adapter
 
@@ -130,6 +150,16 @@ boards:
 - **Secondary rate limit**: extrai `retry-after` do header, chama `_throttle_hit()`
 - Retry automático após sleep em ambos os casos
 
+### Offline Handling
+- Detecta falta de conexão via padrões no stderr (ex: "could not resolve host", "timeout")
+- Backoff crescente: 1s, 2s, 4s... até 300s
+- **Importante**: só verifica offline quando `returncode != 0` (evita falso positivo com conteúdo de issues)
+
+### list_issues — Paginação
+- Page size: 5 items por request (minimiza risco de secondary rate limit)
+- Paginação via cursor GraphQL (`pageInfo.hasNextPage`, `endCursor`)
+- Log de progresso a partir da página 2
+
 ### Métodos de API
 | Método | Função |
 |--------|--------|
@@ -145,9 +175,9 @@ boards:
 ### Métodos Implementados
 - `connect()` — extrai repositório do config
 - `sync_boards()` — sincroniza boards/colunas com GitHub Projects
+- `list_issues()` — lista issues de um board (paginado)
 
 ### Métodos Pendentes
-- `list_issues()` — listar issues de um board
 - `get_issue()` — buscar issue específica
 - `move_issue()` — mover issue para outra coluna
 - `update_issue()` — atualizar body da issue
@@ -163,12 +193,18 @@ boards:
 - `boards.platform` obrigatório
 - `boards.<id>.name` obrigatório
 - `boards.<id>.columns.<col>.name` obrigatório
+- `log.ttl` se presente, deve ser inteiro >= 1
+
+## Bugs Corrigidos
+
+- **Falso positivo de offline**: `_gql` verificava offline mesmo com `returncode == 0`, matchando palavras como "timeout" no body das issues
+- **Busy loop de penalty**: `int()` truncava `wait_seconds` para 0, causando loop infinito. Fix: `max(1, int(...))`
 
 ## Pendências Gerais
 
 - [ ] Implementar métodos restantes do GitHub adapter
 - [ ] Implementar adapter ClickUp
-- [ ] Implementar sync_board() no loop
+- [ ] Implementar sync_board() no loop (detecção de movimentos)
 - [ ] Implementar keep_task()
 - [ ] Implementar call_agent()
 - [ ] Implementar sleep_time()

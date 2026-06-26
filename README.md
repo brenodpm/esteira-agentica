@@ -26,6 +26,11 @@ export PIPE_SSH_KEY_FILE=~/.ssh/id_ed25519
 ### 2. Arquivo pipe.yml
 
 ```yaml
+log:
+  dir: logs
+  ttl: 10
+  level: INFO
+
 git:
   repo:
     main: git@github.com:user/repo.git
@@ -75,13 +80,15 @@ src/
 ├── core/                   # Domínio
 │   ├── log.py              # Logging dual (terminal + arquivo)
 │   ├── config.py           # Validação do pipe.yml
-│   └── board.py            # Board core + interface BoardPort
+│   ├── board.py            # Board core + interface BoardPort
+│   └── snapshot.py         # Snapshot por board
 ├── adapters/               # Implementações
 │   └── github_board.py     # Adapter para GitHub Projects V2
 └── __main__.py             # Entrada principal
 
+.pipe/boards/<id>/          # Diretórios de boards e snapshots
 repo/                       # Repositórios clonados
-logs/                       # Logs diários
+logs/                       # Logs diários (JSON)
 pipe.yml                    # Configuração
 ```
 
@@ -132,9 +139,14 @@ O adapter do GitHub implementa controle automático de rate limit:
 
 ### Logs
 ```
-[GitHub] [16s] brenodpm - Resolvendo owner
+[GitHub] [16s] brenodpm - Resolvendo owner        ← terminal (resumo)
 [GitHub] [16s] brenodpm - Listando projects
 [GitHub] [32s] Secondary rate limit - aguardando 60s
+```
+
+```
+2026-06-26 13:36:19 - INFO - GitHub - [16s] brenodpm - Resolvendo owner | {'operation': 'resolve_owner', 'owner': 'brenodpm'}    ← arquivo (detalhe)
+2026-06-26 13:36:36 - WARNING - GitHub - Secondary rate limit | {'wait_seconds': 256, 'error': '...'}
 ```
 
 ## Documentação Técnica

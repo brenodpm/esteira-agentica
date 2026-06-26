@@ -1,11 +1,13 @@
-"""Log core - escreve em arquivo e terminal simultaneamente."""
+"""Log core - terminal (resumo colorido) + arquivo (detalhe com extras/trace)."""
 
 import logging
 import re
-from datetime import date
+import traceback
+from datetime import date, datetime
 from pathlib import Path
 
-LOG_DIR = Path("logs")
+_DEFAULT_DIR = "logs"
+_DEFAULT_TTL = 10
 
 _RESET = "\033[0m"
 _BOLD = "\033[1m"
@@ -13,9 +15,8 @@ _YELLOW = "\033[33m"
 _RED = "\033[31m"
 _WHITE = "\033[37m"
 
-# Cor dos colchetes por nível (conteúdo fora dos colchetes fica na cor padrão)
 _LEVEL_COLOR = {
-    logging.DEBUG: _WHITE,    # trace
+    logging.DEBUG: _WHITE,
     logging.INFO: _BOLD,
     logging.WARNING: _YELLOW,
     logging.ERROR: _RED,
@@ -24,55 +25,84 @@ _LEVEL_COLOR = {
 _BRACKET = re.compile(r"\[([^\]]+)\]")
 
 
-class _ColorFormatter(logging.Formatter):
-    def format(self, record):
-        msg = super().format(record)
-        color = _LEVEL_COLOR.get(record.levelno, _BOLD)
-        return _BRACKET.sub(f"{color}[\\1]{_RESET}", msg)
-
-
 class Log:
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance._log_dir = Path(_DEFAULT_DIR)
+            cls._instance._ttl = _DEFAULT_TTL
+            cls._instance._file = None
             cls._instance._setup()
         return cls._instance
 
+    def configure(self, config: dict):
+        """Aplica configuração de log do pipe.yml."""
+        log_cfg = config.get("log", {})
+        new_dir = Path(log_cfg.get("dir", _DEFAULT_DIR))
+        self._ttl = log_cfg.get("ttl", _DEFAULT_TTL)
+        if new_dir != self._log_dir:
+            self._log_dir = new_dir
+            if self._file:
+                self._file.close()
+            self._setup()
+
     def _setup(self):
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        self._logger = logging.getLogger("esteira")
-        if self._logger.handlers:
+        self._log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = self._log_dir / f"{date.today().strftime('%Y-%m-%d')}.json"
+        self._file = open(log_file, "a", encoding="utf-8")
+
+    def cleanup(self):
+        """Remove arquivos de log com mais de ttl dias."""
+        if not self._log_dir.exists():
             return
+        now = date.today()
+        for path in sorted(self._log_dir.rglob("*")):
+            if path.is_file():
+                age = (now - date.fromtimestamp(path.stat().st_mtime)).days
+                if age > self._ttl:
+                    path.unlink()
+        for path in sorted(self._log_dir.rglob("*"), reverse=True):
+            if path.is_dir() and not any(path.iterdir()):
+                path.rmdir()
 
-        self._logger.setLevel(logging.INFO)
+    def separator(self):
+        """Escreve linha em branco no arquivo para demarcar início de execução."""
+        self._file.write("\n")
+        self._file.flush()
 
-        # Arquivo
-        log_file = LOG_DIR / f"{date.today().strftime('%Y-%m-%d')}.log"
-        fh = logging.FileHandler(log_file, encoding="utf-8")
-        fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
-        self._logger.addHandler(fh)
+    def info(self, module: str, msg: str, *args, **extra):
+        self._log("INFO", module, msg, args, extra)
 
-        # Terminal
-        ch = logging.StreamHandler()
-        ch.setFormatter(_ColorFormatter("%(message)s"))
-        self._logger.addHandler(ch)
+    def warning(self, module: str, msg: str, *args, **extra):
+        self._log("WARNING", module, msg, args, extra)
 
-    def set_level(self, level: str):
-        self._logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+    def error(self, module: str, msg: str, *args, exc: BaseException = None, **extra):
+        self._log("ERROR", module, msg, args, extra, exc=exc)
 
-    def info(self, module: str, msg: str, *args):
-        self._logger.info(f"[{module}] {msg}", *args)
+    def debug(self, module: str, msg: str, *args, **extra):
+        self._log("DEBUG", module, msg, args, extra)
 
-    def warning(self, module: str, msg: str, *args):
-        self._logger.warning(f"[{module}] {msg}", *args)
+    def _log(self, level: str, module: str, msg: str, args: tuple, extra: dict, exc: BaseException = None):
+        formatted = msg % args if args else msg
 
-    def error(self, module: str, msg: str, *args, **kwargs):
-        self._logger.error(f"[{module}] {msg}", *args, **kwargs)
+        # Terminal: resumo colorido
+        color = _LEVEL_COLOR.get(getattr(logging, level), _BOLD)
+        terminal_msg = f"[{module}] {formatted}"
+        terminal_msg = _BRACKET.sub(f"{color}[\\1]{_RESET}", terminal_msg)
+        print(terminal_msg)
 
-    def debug(self, module: str, msg: str, *args):
-        self._logger.debug(f"[{module}] {msg}", *args)
+        # Arquivo: timestamp - level - module - message + extras
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        file_line = f"{ts} - {level} - {module} - {formatted}"
+        if extra:
+            file_line += f" | {extra}"
+        if exc:
+            file_line += f"\n{traceback.format_exception(type(exc), exc, exc.__traceback__)[-1].rstrip()}"
+            file_line += f"\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
+        self._file.write(file_line + "\n")
+        self._file.flush()
 
 
 log = Log()

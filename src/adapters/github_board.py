@@ -46,7 +46,7 @@ class GitHubBoardAdapter(BoardPort):
     def _penalty_check(self):
         if self._in_penalty:
             if self._penalty_ttl and self._penalty_ttl > datetime.now():
-                remaining = int((self._penalty_ttl - datetime.now()).total_seconds())
+                remaining = max(1, int((self._penalty_ttl - datetime.now()).total_seconds()))
                 raise PenaltyException(remaining)
             else:
                 self._in_penalty = False
@@ -128,7 +128,8 @@ class GitHubBoardAdapter(BoardPort):
         if self._extract_retry_after(f"{output} {error}"):
             wait = self._throttle_value * 8
             back_at = (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M:%S")
-            log.warning("GitHub", f"[{self._throttle_value}s] Secondary rate limit - retorna às {back_at}")
+            log.warning("GitHub", f"[{self._throttle_value}s] Secondary rate limit - retorna às {back_at}",
+                        wait_seconds=wait, error=error[:200])
             self._throttle_hit()
             time.sleep(wait)
             return True
@@ -137,13 +138,15 @@ class GitHubBoardAdapter(BoardPort):
         reset_time = self._get_rate_limit_reset()
         if reset_time and reset_time > 0:
             back_at = (datetime.now() + timedelta(seconds=reset_time)).strftime("%H:%M:%S")
-            log.warning("GitHub", f"[{self._throttle_value}s] Primary rate limit - retorna às {back_at}")
+            log.warning("GitHub", f"[{self._throttle_value}s] Primary rate limit - retorna às {back_at}",
+                        wait_seconds=reset_time, error=error[:200])
             time.sleep(reset_time)
             return True
 
         # Fallback
         back_at = (datetime.now() + timedelta(seconds=60)).strftime("%H:%M:%S")
-        log.warning("GitHub", f"[{self._throttle_value}s] Rate limit sem tempo definido - retorna às {back_at}")
+        log.warning("GitHub", f"[{self._throttle_value}s] Rate limit sem tempo definido - retorna às {back_at}",
+                    wait_seconds=60, error=error[:200])
         time.sleep(60)
         return True
 
@@ -171,14 +174,20 @@ class GitHubBoardAdapter(BoardPort):
 
         wait = self._offline_value
         back_at = (datetime.now() + timedelta(seconds=wait)).strftime("%H:%M:%S")
-        log.warning("GitHub", f"Sem conexão - nova tentativa às {back_at}")
+        log.warning("GitHub", f"Sem conexão - nova tentativa às {back_at}",
+                    wait_seconds=wait, attempt=self._offline_value, error=error[:200])
         time.sleep(wait)
         self._offline_value = min(self._offline_value * 2, self._offline_max)
         return True
 
     def _gh(self, *args) -> str:
         """Executa comando gh com tratamento de rate limit e falta de conexão."""
+        attempt = 0
         while True:
+            attempt += 1
+            if attempt > 1:
+                log.info("GitHub", f"[{self._throttle_value}s] Tentando novamente (tentativa {attempt})",
+                         attempt=attempt, command=args[0] if args else "")
             self._throttle()
             result = subprocess.run(["gh", *args], capture_output=True, text=True)
             output = result.stdout.strip()
@@ -198,7 +207,12 @@ class GitHubBoardAdapter(BoardPort):
 
     def _gql(self, query: str, **variables) -> dict:
         """Executa query GraphQL com tratamento de rate limit e falta de conexão."""
+        attempt = 0
         while True:
+            attempt += 1
+            if attempt > 1:
+                log.info("GitHub", f"[{self._throttle_value}s] Tentando novamente (tentativa {attempt})",
+                         attempt=attempt, query=query[:80])
             self._throttle()
             args = ["gh", "api", "graphql", "-f", f"query={query}"]
             for k, v in variables.items():
@@ -212,7 +226,7 @@ class GitHubBoardAdapter(BoardPort):
             if self._handle_rate_limit(output, error):
                 continue
 
-            if self._handle_offline(output, error):
+            if result.returncode != 0 and self._handle_offline(output, error):
                 continue
 
             if not output:
@@ -226,7 +240,8 @@ class GitHubBoardAdapter(BoardPort):
             return data.get("data", {})
 
     def _resolve_owner(self, owner: str) -> tuple[str, str]:
-        log.info("GitHub", f"[{self._throttle_value}s] {owner} - Resolvendo owner")
+        log.info("GitHub", f"[{self._throttle_value}s] {owner} - Resolvendo owner",
+                 operation="resolve_owner", owner=owner)
         data = self._gql(
             "query($login:String!){organization(login:$login){id} user(login:$login){id}}",
             login=owner,
@@ -236,14 +251,16 @@ class GitHubBoardAdapter(BoardPort):
         return data["user"]["id"], "user"
 
     def _list_projects(self, owner: str, owner_type: str) -> list[dict]:
-        log.info("GitHub", f"[{self._throttle_value}s] {owner} - Listando projects")
+        log.info("GitHub", f"[{self._throttle_value}s] {owner} - Listando projects",
+                 operation="list_projects", owner=owner, owner_type=owner_type)
         entity = "organization" if owner_type == "organization" else "user"
         query = f"query($login:String!){{{entity}(login:$login){{projectsV2(first:50){{nodes{{id number title}}}}}}}}"
         data = self._gql(query, login=owner)
         return data[entity]["projectsV2"]["nodes"]
 
     def _create_project(self, owner_id: str, title: str) -> dict:
-        log.info("GitHub", f"[{self._throttle_value}s] {title} - Criando project")
+        log.info("GitHub", f"[{self._throttle_value}s] {title} - Criando project",
+                 operation="create_project", owner_id=owner_id, title=title)
         data = self._gql(
             "mutation($ownerId:ID!,$title:String!){createProjectV2(input:{ownerId:$ownerId,title:$title}){projectV2{id number title}}}",
             ownerId=owner_id,
@@ -252,7 +269,8 @@ class GitHubBoardAdapter(BoardPort):
         return data["createProjectV2"]["projectV2"]
 
     def _get_status_field(self, project_id: str) -> dict | None:
-        log.info("GitHub", f"[{self._throttle_value}s] {project_id[:8]}... - Buscando campo Status")
+        log.info("GitHub", f"[{self._throttle_value}s] {project_id[:8]}... - Buscando campo Status",
+                 operation="get_status_field", project_id=project_id)
         data = self._gql(
             "query($id:ID!){node(id:$id){...on ProjectV2{fields(first:20){nodes{...on ProjectV2SingleSelectField{id name options{id name}}}}}}}",
             id=project_id,
@@ -263,7 +281,8 @@ class GitHubBoardAdapter(BoardPort):
         return None
 
     def _create_status_field(self, project_id: str, columns: list[str]) -> None:
-        log.info("GitHub", f"[{self._throttle_value}s] {project_id[:8]}... - Criando campo Status")
+        log.info("GitHub", f"[{self._throttle_value}s] {project_id[:8]}... - Criando campo Status",
+                 operation="create_status_field", project_id=project_id, columns=columns)
         opts = "[" + ",".join(f'{{name:"{col}",color:GRAY,description:""}}' for col in columns) + "]"
         self._gql(
             f'mutation($pid:ID!){{createProjectV2Field(input:{{projectId:$pid,dataType:SINGLE_SELECT,name:"Status",singleSelectOptions:{opts}}}){{projectV2Field{{...on ProjectV2SingleSelectField{{id}}}}}}}}',
@@ -271,7 +290,8 @@ class GitHubBoardAdapter(BoardPort):
         )
 
     def _update_status_options(self, field_id: str, columns: list[str], existing: dict[str, str]) -> None:
-        log.info("GitHub", f"[{self._throttle_value}s] {field_id[:8]}... - Atualizando opções do Status")
+        log.info("GitHub", f"[{self._throttle_value}s] {field_id[:8]}... - Atualizando opções do Status",
+                 operation="update_status_options", field_id=field_id, columns=columns)
         parts = []
         for col in columns:
             if col in existing:
@@ -347,11 +367,12 @@ class GitHubBoardAdapter(BoardPort):
         meta = self._board_meta(board_id)
         project_id = meta["project_id"]
 
-        log.info("GitHub", f"[{self._throttle_value}s] {board_id} - Listando issues")
+        log.info("GitHub", f"[{self._throttle_value}s] {board_id} - Listando issues",
+                 operation="list_issues", board_id=board_id, project_id=project_id)
 
         query = """query($pid:ID!,$cursor:String){
           node(id:$pid){...on ProjectV2{
-            items(first:100,after:$cursor){
+            items(first:5,after:$cursor){
               pageInfo{hasNextPage endCursor}
               nodes{
                 id
@@ -365,7 +386,12 @@ class GitHubBoardAdapter(BoardPort):
 
         issues: list[Issue] = []
         cursor = ""
+        page_num = 0
         while True:
+            page_num += 1
+            if page_num > 1:
+                log.info("GitHub", f"[{self._throttle_value}s] {board_id} - Página {page_num}",
+                         operation="list_issues_page", board_id=board_id, page=page_num)
             data = self._gql(query, pid=project_id, cursor=cursor) if cursor \
                 else self._gql(query, pid=project_id)
 
