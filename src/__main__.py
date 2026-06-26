@@ -1,122 +1,142 @@
+from src.core.log import log
+from src.core.config import check_config as validate_config, ConfigError, SSH_KEY_ENV
+from src.core.board import Board, PenaltyException
+from src.core.snapshot import Snapshot
+from src.core.change_queue import ChangeQueue
+from src.adapters.github_board import GitHubBoardAdapter
+from pathlib import Path
+from datetime import datetime, timedelta
+import subprocess
+import shutil
+import os
 import time
-from datetime import datetime, timezone, timedelta
 
-from src.config import load_config
-from src.log import log, cleanup_logs, set_level
-from src.sync import sync, full_sync, _load_snapshot, _save_snapshot
-from src.issues import sync_issues, sync_issues_local
-from src.pick_task import pick_task, TODO_ADVANCE
-from src.agent import run_agent
-from src.github import (
-    RateLimitError, GitHubError, sleep_until_rate_limit_reset,
-    get_graphql_rate_info, configure as configure_github,
-    is_in_penalty, penalty_remaining,
-)
+REPO_DIR = Path("repo")
+SSH_DIR = Path.home() / ".ssh"
 
-_tz = timezone(timedelta(hours=-3))
+board: Board = None
+
+ADAPTERS = {
+    "github": GitHubBoardAdapter,
+}
 
 
-def _log_wake(sleeptime):
-    wake = datetime.now(_tz) + timedelta(seconds=sleeptime)
-    log.info("[Sleep Time] Retorno às %s", wake.strftime("%H:%M:%S"))
+def check_config():
+    log.info("Config", "Validando pipe.yml")
+    try:
+        config = validate_config()
+        log.info("Config", "pipe.yml válido")
+        return config
+    except ConfigError as e:
+        log.error("Config", str(e))
+        raise SystemExit(1)
+
+
+def _setup_ssh():
+    SSH_DIR.mkdir(mode=0o700, exist_ok=True)
+    key_file = SSH_DIR / "id_pipe"
+    source_key = Path(os.environ[SSH_KEY_ENV]).expanduser()
+    key_file.write_bytes(source_key.read_bytes())
+    key_file.chmod(0o600)
+    
+    # Configura SSH para usar essa chave no github
+    ssh_config = SSH_DIR / "config"
+    config_block = "\nHost github.com\n  IdentityFile ~/.ssh/id_pipe\n  StrictHostKeyChecking no\n"
+    if ssh_config.exists():
+        content = ssh_config.read_text()
+        if "id_pipe" not in content:
+            ssh_config.write_text(content + config_block)
+    else:
+        ssh_config.write_text(config_block)
+
+
+def startup(config: dict):
+    log.info("Startup", "Verificando repositórios")
+    _setup_ssh()
+    REPO_DIR.mkdir(exist_ok=True)
+    
+    expected = set(config["git"]["repo"].keys())
+    existing = {d.name for d in REPO_DIR.iterdir() if d.is_dir()}
+    
+    # Clonar faltantes
+    for repo_id in expected - existing:
+        url = config["git"]["repo"][repo_id]
+        log.info("Startup", f"Clonando {repo_id}")
+        subprocess.run(["git", "clone", url, repo_id], cwd=REPO_DIR, check=True)
+    
+    # Remover extras
+    for repo_id in existing - expected:
+        log.info("Startup", f"Removendo {repo_id}")
+        shutil.rmtree(REPO_DIR / repo_id)
+
+
+def first_board_sync(config: dict):
+    global board
+    log.info("Board", "Sincronizando estrutura de boards")
+    while True:
+        try:
+            board.sync_boards(config)
+            break
+        except PenaltyException as e:
+            log.warning("Board", f"Rate limit - retorna às {(datetime.now() + timedelta(seconds=e.wait_seconds)).strftime('%H:%M:%S')}")
+            time.sleep(e.wait_seconds)
+
+    log.info("Board", "Detectando mudanças remotas")
+    snapshot = Snapshot().load()
+    queue = ChangeQueue()
+    total = 0
+    for board_id in board.board_ids(config):
+        while True:
+            try:
+                total += board.detect_board_changes(board_id, snapshot, queue)
+                break
+            except PenaltyException as e:
+                back_at = (datetime.now() + timedelta(seconds=e.wait_seconds)).strftime('%H:%M:%S')
+                log.warning("Board", f"Rate limit em '{board_id}' - retorna às {back_at}")
+                time.sleep(e.wait_seconds)
+    log.info("Board", f"{total} mudança(s) remota(s) adicionada(s) à fila")
+
+
+def sync_board():
+    pass
+
+
+def keep_task():
+    pass
+
+
+def call_agent():
+    pass
+
+
+def sleep_time():
+    pass
 
 
 def main():
-    log.info("")
-    log.info("[Pipe] Inicianda")
-    config = load_config("pipe.yml")
-    set_level(config.get("pipe", {}).get("log", {}).get("level", "INFO"))
-    cleanup_logs(config.get("ttl-log", 10))
-    configure_github(config)
+    global board
+    log.info("Pipe", "Iniciando esteira agêntica")
 
-    # sync() roda apenas uma vez ao iniciar
-    snapshot = sync(config)
+    config = check_config()
+    startup(config)
+    
+    platform = config["boards"]["platform"]
+    if platform not in ADAPTERS:
+        log.error("Config", f"Plataforma '{platform}' não suportada. Use: {list(ADAPTERS.keys())}")
+        raise SystemExit(1)
+    
+    adapter = ADAPTERS[platform]()
+    board = Board(adapter)
+    board.connect(config)
+    
+    first_board_sync(config)
 
-    sleeptime = config["pipe"].get("sleeptime", 1800)
-
-    # Full sync na inicialização — garante estado correto (pula se em penalty)
-    if is_in_penalty():
-        log.info("[Pipe] Penalty ativo — pulando full sync inicial")
-    else:
-        log.info("[Pipe] Full sync inicial")
-        try:
-            full_sync(config, snapshot)
-        except RateLimitError as e:
-            if is_in_penalty():
-                log.info("[Pipe] Penalty ativado durante full sync — entrando em modo local")
-            else:
-                log.info("[Pipe] Throttle no full sync inicial — aguardando")
-                sleep_until_rate_limit_reset(sleeptime, retry_after=e.retry_after)
-                full_sync(config, snapshot)
-
-    current_day = datetime.now(timezone.utc).date()
-    log.info("[Pipe] Loop iniciado (dia: %s)", current_day)
-    while True:
-        try:
-            # Penalty box: só sync local + agentes
-            if is_in_penalty():
-                sync_issues_local(config)
-                task = pick_task(config)
-                if task == TODO_ADVANCE:
-                    log.info("[Pipe] Auto-advance realizado — aguardando sync propagar")
-                elif task:
-                    log.info("[Pipe] Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
-                                task["id"], task.get("created_at", "?"), task["name"],
-                                task["board_id"], task["column"])
-                    run_agent(config, task)
-                else:
-                    remaining = penalty_remaining()
-                    log.info("[Pipe] Penalty ativo — restam %ds — nenhuma tarefa elegível", remaining)
-                    _log_wake(sleeptime)
-                    time.sleep(sleeptime)
-                continue
-
-            # Fluxo normal: virada de dia + sync completo
-            today = datetime.now(timezone.utc).date()
-            if today > current_day:
-                log.info("[Pipe] Virada de dia detectada (%s → %s) — full sync", current_day, today)
-                snapshot = _load_snapshot()
-                for issues in snapshot.get("issues", {}).values():
-                    for issue in issues:
-                        issue["b-time"] = None
-                _save_snapshot(snapshot)
-                full_sync(config, snapshot)
-                current_day = today
-
-            synced = sync_issues(config)
-            task = pick_task(config)
-            if task == TODO_ADVANCE:
-                log.info("[Pipe] Auto-advance realizado — aguardando sync propagar")
-            elif task:
-                log.info("[Pipe] Tarefa selecionada: #%s [%s] %s (board: %s, col: %s)",
-                            task["id"], task.get("created_at", "?"), task["name"],
-                            task["board_id"], task["column"])
-                run_agent(config, task)
-            elif not synced:
-                log.info("[Pipe] Nenhuma tarefa elegível")
-                log.info("[Pipe] intervalo: %ds", sleeptime)
-                _log_wake(sleeptime)
-                time.sleep(sleeptime)
-        except RateLimitError as e:
-            if is_in_penalty():
-                log.info("[Pipe] Penalty ativado — entrando em modo local")
-                continue
-            if e.retry_after:
-                log.info("[Pipe] Throttle — aguardando API")
-            else:
-                log.warning("[Pipe] Rate limit — aguardando reset")
-            sleep_until_rate_limit_reset(sleeptime, retry_after=e.retry_after)
-            rate = get_graphql_rate_info()
-            if rate:
-                log.info("[Pipe] Rate info — remaining: %s, resetAt: %s", rate.get("remaining"), rate.get("resetAt"))
-        except GitHubError as e:
-            log.error("[Pipe] Erro GitHub: %s", e)
-            _log_wake(sleeptime)
-            time.sleep(sleeptime)
-        except Exception as e:
-            log.error("[Pipe] Erro inesperado: %s", e, exc_info=True)
-            _log_wake(sleeptime)
-            time.sleep(sleeptime)
+    running = True
+    while running:
+        sync_board()
+        keep_task()
+        call_agent()
+        sleep_time()
 
 
 if __name__ == "__main__":
